@@ -1333,6 +1333,9 @@ function updateIpProxyUI(state = latestState) {
   if (rowIpProxyRegion) {
     rowIpProxyRegion.style.display = showSettings && isAccountMode ? '' : 'none';
   }
+  if (typeof rowAutoNetworkSwitch !== 'undefined' && rowAutoNetworkSwitch) {
+    rowAutoNetworkSwitch.style.display = showSettings && isAccountMode ? '' : 'none';
+  }
   if (rowIpProxyActions) {
     rowIpProxyActions.style.display = showSettings ? '' : 'none';
   }
@@ -1407,6 +1410,19 @@ function updateIpProxyUI(state = latestState) {
   }
   if (inputIpProxyAccountList) {
     inputIpProxyAccountList.disabled = !enabled || !isAccountMode || !accountListAvailable;
+  }
+  if (typeof inputAutoNetworkSwitchEnabled !== 'undefined' && inputAutoNetworkSwitchEnabled) {
+    inputAutoNetworkSwitchEnabled.disabled = !enabled || !isAccountMode;
+  }
+  const autoNetworkEnabled = Boolean(inputAutoNetworkSwitchEnabled?.checked);
+  if (typeof inputAutoNetworkSignupProxyList !== 'undefined' && inputAutoNetworkSignupProxyList) {
+    inputAutoNetworkSignupProxyList.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
+  }
+  if (typeof inputAutoNetworkCheckoutProxyList !== 'undefined' && inputAutoNetworkCheckoutProxyList) {
+    inputAutoNetworkCheckoutProxyList.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
+  }
+  if (typeof inputAutoNetworkSwitchMaxAttempts !== 'undefined' && inputAutoNetworkSwitchMaxAttempts) {
+    inputAutoNetworkSwitchMaxAttempts.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
   }
   const autoSyncEnabledInput = typeof inputIpProxyAutoSyncEnabled !== 'undefined' ? inputIpProxyAutoSyncEnabled : null;
   const autoSyncIntervalInput = typeof inputIpProxyAutoSyncIntervalMinutes !== 'undefined' ? inputIpProxyAutoSyncIntervalMinutes : null;

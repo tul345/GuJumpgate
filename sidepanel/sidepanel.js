@@ -155,6 +155,11 @@ const inputIpProxyPassword = document.getElementById('input-ip-proxy-password');
 const btnToggleIpProxyPassword = document.getElementById('btn-toggle-ip-proxy-password');
 const rowIpProxyRegion = document.getElementById('row-ip-proxy-region');
 const inputIpProxyRegion = document.getElementById('input-ip-proxy-region');
+const rowAutoNetworkSwitch = document.getElementById('row-auto-network-switch');
+const inputAutoNetworkSwitchEnabled = document.getElementById('input-auto-network-switch-enabled');
+const inputAutoNetworkSignupProxyList = document.getElementById('input-auto-network-signup-proxy-list');
+const inputAutoNetworkCheckoutProxyList = document.getElementById('input-auto-network-checkout-proxy-list');
+const inputAutoNetworkSwitchMaxAttempts = document.getElementById('input-auto-network-switch-max-attempts');
 const rowIpProxyActions = document.getElementById('row-ip-proxy-actions');
 const ipProxyActionButtons = document.getElementById('ip-proxy-action-buttons');
 const ipProxyActionHint = document.getElementById('ip-proxy-action-hint');
@@ -4101,6 +4106,22 @@ function collectSettingsPayload() {
     ipProxyUsername: currentIpProxyServiceProfile.username,
     ipProxyPassword: currentIpProxyServiceProfile.password,
     ipProxyRegion: currentIpProxyServiceProfile.region,
+    autoNetworkSwitchEnabled: Boolean(inputAutoNetworkSwitchEnabled?.checked),
+    autoNetworkSignupProxyList: normalizeIpProxyAccountList(
+      typeof inputAutoNetworkSignupProxyList !== 'undefined' && inputAutoNetworkSignupProxyList
+        ? inputAutoNetworkSignupProxyList.value
+        : latestState?.autoNetworkSignupProxyList || ''
+    ),
+    autoNetworkCheckoutProxyList: normalizeIpProxyAccountList(
+      typeof inputAutoNetworkCheckoutProxyList !== 'undefined' && inputAutoNetworkCheckoutProxyList
+        ? inputAutoNetworkCheckoutProxyList.value
+        : latestState?.autoNetworkCheckoutProxyList || ''
+    ),
+    autoNetworkSwitchMaxAttempts: String(Math.max(1, Math.min(12, Number.parseInt(String(
+      typeof inputAutoNetworkSwitchMaxAttempts !== 'undefined' && inputAutoNetworkSwitchMaxAttempts
+        ? inputAutoNetworkSwitchMaxAttempts.value
+        : latestState?.autoNetworkSwitchMaxAttempts || 3
+    ).trim(), 10) || 3))),
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
     plusModeEnabled: fixedPlusModeEnabled,
@@ -9693,6 +9714,19 @@ function applySettingsState(state) {
   if (typeof inputIpProxyRegion !== 'undefined' && inputIpProxyRegion) {
     inputIpProxyRegion.value = activeIpProxyProfile.region;
   }
+  if (typeof inputAutoNetworkSwitchEnabled !== 'undefined' && inputAutoNetworkSwitchEnabled) {
+    inputAutoNetworkSwitchEnabled.checked = Boolean(state?.autoNetworkSwitchEnabled);
+  }
+  if (typeof inputAutoNetworkSignupProxyList !== 'undefined' && inputAutoNetworkSignupProxyList) {
+    inputAutoNetworkSignupProxyList.value = resolveIpProxyAccountList(state?.autoNetworkSignupProxyList || '');
+  }
+  if (typeof inputAutoNetworkCheckoutProxyList !== 'undefined' && inputAutoNetworkCheckoutProxyList) {
+    inputAutoNetworkCheckoutProxyList.value = resolveIpProxyAccountList(state?.autoNetworkCheckoutProxyList || '');
+  }
+  if (typeof inputAutoNetworkSwitchMaxAttempts !== 'undefined' && inputAutoNetworkSwitchMaxAttempts) {
+    const attempts = Number.parseInt(String(state?.autoNetworkSwitchMaxAttempts ?? '').trim(), 10);
+    inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
+  }
   if (typeof setIpProxyMode === 'function') {
     setIpProxyMode(activeIpProxyProfile.mode);
   }
@@ -14309,6 +14343,8 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   inputIpProxyHost,
   inputIpProxyUsername,
   inputIpProxyPassword,
+  inputAutoNetworkSignupProxyList,
+  inputAutoNetworkCheckoutProxyList,
 ].forEach((input) => {
   input?.addEventListener('input', () => {
     markSettingsDirty(true);
@@ -14317,6 +14353,24 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   input?.addEventListener('blur', () => {
     saveSettings({ silent: true }).catch(() => {});
   });
+});
+
+inputAutoNetworkSwitchEnabled?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  if (typeof updateIpProxyUI === 'function') {
+    updateIpProxyUI(latestState);
+  }
+  saveSettings({ silent: true }).catch(() => {});
+});
+
+inputAutoNetworkSwitchMaxAttempts?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputAutoNetworkSwitchMaxAttempts?.addEventListener('blur', () => {
+  const attempts = Number.parseInt(String(inputAutoNetworkSwitchMaxAttempts.value || '').trim(), 10);
+  inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
+  saveSettings({ silent: true }).catch(() => {});
 });
 
 inputIpProxyUsername?.addEventListener('paste', () => {
@@ -15775,6 +15829,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         || message.payload.ipProxyAppliedExitSource !== undefined
         || message.payload.ipProxyAutoSyncEnabled !== undefined
         || message.payload.ipProxyAutoSyncIntervalMinutes !== undefined
+        || message.payload.autoNetworkSwitchEnabled !== undefined
+        || message.payload.autoNetworkSignupProxyList !== undefined
+        || message.payload.autoNetworkCheckoutProxyList !== undefined
+        || message.payload.autoNetworkSwitchMaxAttempts !== undefined
+        || message.payload.autoNetworkSignupProxyCursor !== undefined
+        || message.payload.autoNetworkCheckoutProxyCursor !== undefined
+        || message.payload.autoNetworkActiveProfile !== undefined
+        || message.payload.autoNetworkActiveExpectedRegion !== undefined
       ) {
         const hasIpProxyConfigPayload = (
           message.payload.ipProxyService !== undefined
@@ -15829,6 +15891,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         if (message.payload.ipProxyApiUrl !== undefined && inputIpProxyApiUrl) {
           inputIpProxyApiUrl.value = String(message.payload.ipProxyApiUrl || '').trim();
+        }
+        if (message.payload.autoNetworkSwitchEnabled !== undefined && inputAutoNetworkSwitchEnabled) {
+          inputAutoNetworkSwitchEnabled.checked = Boolean(message.payload.autoNetworkSwitchEnabled);
+        }
+        if (message.payload.autoNetworkSignupProxyList !== undefined && inputAutoNetworkSignupProxyList) {
+          inputAutoNetworkSignupProxyList.value = normalizeIpProxyAccountList(message.payload.autoNetworkSignupProxyList || '');
+        }
+        if (message.payload.autoNetworkCheckoutProxyList !== undefined && inputAutoNetworkCheckoutProxyList) {
+          inputAutoNetworkCheckoutProxyList.value = normalizeIpProxyAccountList(message.payload.autoNetworkCheckoutProxyList || '');
+        }
+        if (message.payload.autoNetworkSwitchMaxAttempts !== undefined && inputAutoNetworkSwitchMaxAttempts) {
+          const attempts = Number.parseInt(String(message.payload.autoNetworkSwitchMaxAttempts ?? '').trim(), 10);
+          inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
         }
         if (hasIpProxyConfigPayload) {
           const activeProxyProfile = typeof getIpProxyServiceProfile === 'function'

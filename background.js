@@ -919,6 +919,12 @@ const PERSISTED_SETTING_DEFAULTS = {
   ipProxyUsername: '',
   ipProxyPassword: '',
   ipProxyRegion: '',
+  autoNetworkSwitchEnabled: false,
+  autoNetworkSignupProxyList: '',
+  autoNetworkCheckoutProxyList: '',
+  autoNetworkSwitchMaxAttempts: 3,
+  autoNetworkSignupProxyCursor: 0,
+  autoNetworkCheckoutProxyCursor: 0,
   codex2apiUrl: DEFAULT_CODEX2API_URL,
   codex2apiAdminKey: '',
   customPassword: '',
@@ -2854,6 +2860,16 @@ function normalizePersistentSettingValue(key, value) {
       return String(value || '');
     case 'ipProxyRegion':
       return String(value || '').trim();
+    case 'autoNetworkSwitchEnabled':
+      return Boolean(value);
+    case 'autoNetworkSignupProxyList':
+    case 'autoNetworkCheckoutProxyList':
+      return normalizeIpProxyAccountList(value || '');
+    case 'autoNetworkSwitchMaxAttempts':
+      return normalizeBoundedIntegerSetting(value, 3, 1, 12);
+    case 'autoNetworkSignupProxyCursor':
+    case 'autoNetworkCheckoutProxyCursor':
+      return normalizeIpProxyCurrentIndex(value, 0);
     case 'ipProxyApiPool':
       return normalizeProxyPoolEntries(
         value,
@@ -11732,6 +11748,189 @@ async function deleteAndBroadcastAccountRunHistoryRecords(recordIds = [], stateO
   return result;
 }
 
+const AUTO_NETWORK_SIGNUP_PROFILE = 'signup';
+const AUTO_NETWORK_CHECKOUT_PROFILE = 'checkout';
+const AUTO_NETWORK_PROFILE_CONFIG = Object.freeze({
+  [AUTO_NETWORK_SIGNUP_PROFILE]: Object.freeze({
+    expectedRegion: 'JP',
+    label: '注册 JP',
+    listKey: 'autoNetworkSignupProxyList',
+    cursorKey: 'autoNetworkSignupProxyCursor',
+  }),
+  [AUTO_NETWORK_CHECKOUT_PROFILE]: Object.freeze({
+    expectedRegion: 'US',
+    label: '支付 US',
+    listKey: 'autoNetworkCheckoutProxyList',
+    cursorKey: 'autoNetworkCheckoutProxyCursor',
+  }),
+});
+
+function normalizeAutoNetworkProfile(value = '') {
+  const normalized = String(value || '').trim().toLowerCase();
+  return AUTO_NETWORK_PROFILE_CONFIG[normalized] ? normalized : '';
+}
+
+function getAutoNetworkProxyPoolForProfile(state = {}, profile = '') {
+  const normalizedProfile = normalizeAutoNetworkProfile(profile);
+  const config = AUTO_NETWORK_PROFILE_CONFIG[normalizedProfile];
+  if (!config) {
+    return [];
+  }
+  const provider = typeof normalizeIpProxyProviderValue === 'function'
+    ? normalizeIpProxyProviderValue(state?.ipProxyService)
+    : String(state?.ipProxyService || DEFAULT_IP_PROXY_SERVICE).trim().toLowerCase();
+  return getAccountModeProxyPoolFromState({
+    ...state,
+    ipProxyMode: 'account',
+    ipProxyAccountList: state?.[config.listKey] || '',
+    ipProxyHost: '',
+    ipProxyPort: '',
+    ipProxyUsername: '',
+    ipProxyPassword: '',
+    ipProxyRegion: '',
+  }, provider);
+}
+
+function isIpProxyExitRegionMatch(status = {}, expectedRegion = '') {
+  const expected = String(expectedRegion || '').trim().toUpperCase();
+  if (!expected) {
+    return true;
+  }
+  const exitRegion = String(
+    status?.exitRegion
+    || status?.ipProxyAppliedExitRegion
+    || status?.region
+    || ''
+  ).trim().toUpperCase();
+  return exitRegion === expected;
+}
+
+function describeIpProxyExitStatus(status = {}) {
+  const ip = String(status?.exitIp || status?.ipProxyAppliedExitIp || '').trim();
+  const region = String(status?.exitRegion || status?.ipProxyAppliedExitRegion || '').trim();
+  const error = String(status?.exitError || status?.error || '').trim();
+  const parts = [];
+  if (ip) parts.push(`IP=${ip}`);
+  if (region) parts.push(`地区=${region}`);
+  if (error) parts.push(`错误=${error}`);
+  return parts.join('，') || '未识别出口';
+}
+
+async function ensureAutoNetworkProfileForNode(nodeId = '', options = {}) {
+  const normalizedNodeId = String(nodeId || '').trim();
+  const profile = normalizedNodeId === 'plus-checkout-create'
+    ? AUTO_NETWORK_CHECKOUT_PROFILE
+    : (normalizedNodeId === 'open-chatgpt' ? AUTO_NETWORK_SIGNUP_PROFILE : '');
+  if (!profile) {
+    return { skipped: true, reason: 'node_not_managed' };
+  }
+
+  const initialState = options.state || await getState();
+  if (!initialState?.autoNetworkSwitchEnabled) {
+    return { skipped: true, reason: 'disabled' };
+  }
+  if (!initialState?.ipProxyEnabled) {
+    throw new Error('自动网络环境切换已开启，但 IP 代理未启用。请先开启 IP 代理。');
+  }
+  if (typeof getAccountModeProxyPoolFromState !== 'function'
+    || typeof buildIpProxyRuntimeStatePatch !== 'function'
+    || typeof applyIpProxySettingsFromState !== 'function'
+    || typeof probeIpProxyExit !== 'function') {
+    throw new Error('自动网络环境切换不可用：代理核心未完整加载。');
+  }
+
+  const config = AUTO_NETWORK_PROFILE_CONFIG[profile];
+  const expectedRegion = config.expectedRegion;
+  const pool = getAutoNetworkProxyPoolForProfile(initialState, profile);
+  if (!pool.length) {
+    throw new Error(`自动网络环境切换已开启，但${config.label}节点池为空。`);
+  }
+
+  const maxAttempts = Math.min(
+    pool.length,
+    Math.max(1, Number(initialState.autoNetworkSwitchMaxAttempts) || 3)
+  );
+  let cursor = normalizeIpProxyCurrentIndex(initialState?.[config.cursorKey], 0);
+  let lastStatus = null;
+  let lastDisplay = '';
+  await addLog(`自动网络：准备切换到${config.label}节点池（${pool.length} 条，期望出口 ${expectedRegion}）。`, 'info', { nodeId: normalizedNodeId });
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    throwIfStopped();
+    const latestState = await getState();
+    const provider = typeof normalizeIpProxyProviderValue === 'function'
+      ? normalizeIpProxyProviderValue(latestState?.ipProxyService)
+      : String(latestState?.ipProxyService || DEFAULT_IP_PROXY_SERVICE).trim().toLowerCase();
+    const index = cursor % pool.length;
+    const current = pool[index];
+    const runtimePatch = buildIpProxyRuntimeStatePatch('account', {
+      pool,
+      index,
+      current,
+    }, provider);
+    const updates = {
+      ipProxyEnabled: true,
+      ipProxyService: provider,
+      ipProxyMode: 'account',
+      ipProxyAccountList: normalizeIpProxyAccountList(latestState?.[config.listKey] || ''),
+      ipProxyHost: '',
+      ipProxyPort: '',
+      ipProxyUsername: '',
+      ipProxyPassword: '',
+      ipProxyRegion: expectedRegion,
+      autoNetworkActiveProfile: profile,
+      autoNetworkActiveExpectedRegion: expectedRegion,
+      ...runtimePatch,
+    };
+
+    await setState(updates);
+    broadcastDataUpdate(updates);
+    const applyState = {
+      ...latestState,
+      ...updates,
+    };
+    const applyStatus = await applyIpProxySettingsFromState(applyState, {
+      skipExitProbe: true,
+      resetNetworkState: true,
+      forceAuthRebind: true,
+    });
+    lastStatus = applyStatus;
+    lastDisplay = `${current.host}:${current.port} (${index + 1}/${pool.length})`;
+    const probeResult = await probeIpProxyExit({
+      state: {
+        ...applyState,
+        ...buildIpProxyRuntimeStatePatch('account', { pool, index, current }, provider),
+      },
+      timeoutMs: 12000,
+      autoRotateMaxAttempts: 0,
+      authRebindMaxAttempts: 1,
+    });
+    lastStatus = probeResult?.proxyRouting || applyStatus || null;
+    if (isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
+      const nextCursor = (index + 1) % pool.length;
+      const cursorPatch = {
+        [config.cursorKey]: nextCursor,
+      };
+      await setState(cursorPatch);
+      broadcastDataUpdate(cursorPatch);
+      await addLog(`自动网络：已切换到${config.label}节点 ${lastDisplay}，出口校验通过（${describeIpProxyExitStatus(lastStatus)}）。`, 'ok', { nodeId: normalizedNodeId });
+      return {
+        skipped: false,
+        profile,
+        expectedRegion,
+        index,
+        count: pool.length,
+        status: lastStatus,
+      };
+    }
+
+    await addLog(`自动网络：${config.label}节点 ${lastDisplay} 出口不匹配，准备换下一条（${attempt}/${maxAttempts}，${describeIpProxyExitStatus(lastStatus)}）。`, 'warn', { nodeId: normalizedNodeId });
+    cursor = (index + 1) % pool.length;
+  }
+
+  throw new Error(`自动网络：${config.label}节点池连续 ${maxAttempts} 次未拿到 ${expectedRegion} 出口，最后状态：${describeIpProxyExitStatus(lastStatus)}。`);
+}
+
 function resolveIpProxyCandidateCountForAutoSwitch(state = {}, mode = 'account', provider = DEFAULT_IP_PROXY_SERVICE) {
   const normalizedMode = typeof normalizeIpProxyMode === 'function'
     ? normalizeIpProxyMode(mode)
@@ -12607,6 +12806,7 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
 
   if (await shouldRunNamedNode('open-chatgpt')) {
     try {
+      await ensureAutoNetworkProfileForNode('open-chatgpt');
       await executeNodeAndWaitWithAutoRunIdleLogWatchdog('open-chatgpt', getAutoRunNodeDelayMs('open-chatgpt'));
     } catch (err) {
       attachFailedNode(err, 'open-chatgpt', await getState());
@@ -12712,6 +12912,7 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
       continue;
     }
     try {
+      await ensureAutoNetworkProfileForNode(nodeId, { state: latestState });
       await executeNodeAndWaitWithAutoRunIdleLogWatchdog(nodeId, getAutoRunNodeDelayMs(nodeId));
       nodeIndex += 1;
     } catch (err) {

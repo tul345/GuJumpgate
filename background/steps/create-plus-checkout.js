@@ -707,6 +707,30 @@
       throw new Error('步骤 6：hosted checkout OpenAI/Stripe 页面提交后长时间未跳转到 PayPal 或成功页。');
     }
 
+    async function ensureHostedCheckoutFreeTrialAmount(tabId) {
+      const pageState = await sendTabMessageUntilStopped(tabId, PLUS_CHECKOUT_SOURCE, {
+        type: 'PLUS_CHECKOUT_GET_STATE',
+        source: 'background',
+        payload: {},
+      });
+      if (pageState?.error) {
+        throw new Error(pageState.error);
+      }
+      const amountSummary = pageState?.checkoutAmountSummary || null;
+      if (!amountSummary?.hasTodayDue) {
+        await addLog('步骤 6：hosted checkout 未能识别“今日应付金额”，为避免误判将继续执行。', 'warn');
+        return;
+      }
+      if (amountSummary.isZero) {
+        await addLog(`步骤 6：hosted checkout 已确认今日应付金额为 ${amountSummary.rawAmount || '0'}。`, 'ok');
+        return;
+      }
+      const amountLabel = amountSummary.rawAmount || (
+        Number.isFinite(Number(amountSummary.amount)) ? String(amountSummary.amount) : '未知金额'
+      );
+      throw new Error(`PLUS_CHECKOUT_NON_FREE_TRIAL::步骤 6：hosted checkout 今日应付金额不是 0（${amountLabel}），当前账号没有免费试用资格，已跳过支付提交。`);
+    }
+
     async function runHostedCheckoutPayPalStep(tabId, payload = {}) {
       await waitForTabCompleteUntilStopped(tabId);
       await sleepWithStop(1000);
@@ -1382,6 +1406,10 @@
         injectSource: PLUS_CHECKOUT_SOURCE,
         logMessage: '步骤 6：正在等待订阅页面完成加载...',
       });
+
+      if (shouldWaitForHostedCheckoutSuccess(state, paymentMethod)) {
+        await ensureHostedCheckoutFreeTrialAmount(tabId);
+      }
 
       const finalCheckoutUrl = String((landedTab?.url || targetCheckoutUrl || '')).trim();
       await setState({

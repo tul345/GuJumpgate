@@ -1332,6 +1332,26 @@
                     <span class="data-label">地区参数</span>
                     <input type="text" id="input-ip-proxy-region" class="data-input" placeholder="可选，例如 US / DE / HK" />
                   </div>
+                  <div class="data-row ip-proxy-column-row" id="row-auto-network-switch" style="display:none;">
+                    <span class="data-label">阶段节点池</span>
+                    <div class="stacked-fields">
+                      <label class="toggle-switch" for="input-auto-network-switch-enabled" title="自动运行时，注册阶段使用 JP 池，第 6 步使用 US 池">
+                        <input type="checkbox" id="input-auto-network-switch-enabled" />
+                        <span class="toggle-switch-track" aria-hidden="true">
+                          <span class="toggle-switch-thumb"></span>
+                        </span>
+                      </label>
+                      <textarea id="input-auto-network-signup-proxy-list" class="data-textarea mono"
+                        placeholder="注册 JP 池：每行 host:port:user:pass"></textarea>
+                      <textarea id="input-auto-network-checkout-proxy-list" class="data-textarea mono"
+                        placeholder="支付 US 池：每行 host:port:user:pass"></textarea>
+                      <div class="data-inline">
+                        <input type="number" id="input-auto-network-switch-max-attempts" class="data-input"
+                          min="1" max="12" step="1" placeholder="3" title="出口地区不匹配时，最多轮询多少条节点" />
+                        <span class="data-unit">次校验</span>
+                      </div>
+                    </div>
+                  </div>
                   <div class="data-row ip-proxy-column-row" id="row-ip-proxy-pool-target-count" style="display:none;">
                     <span class="data-label">任务切换阈值</span>
                     <div class="data-inline">

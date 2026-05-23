@@ -1291,6 +1291,12 @@ header {
 .data-textarea::placeholder { color: var(--text-muted); }
 .data-textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 
+.stacked-fields {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
 .data-input-with-icon {
   padding-right: 38px;
 }
