@@ -20,6 +20,7 @@ importScripts(
   'background/paypal-account-store.js',
   'background/ip-proxy-provider-711proxy.js',
   'background/ip-proxy-core.js',
+  'background/mihomo-controller.js',
   'background/sub2api-api.js',
   'background/panel-bridge.js',
   'background/registration-email-state.js',
@@ -925,6 +926,17 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoNetworkSwitchMaxAttempts: 3,
   autoNetworkSignupProxyCursor: 0,
   autoNetworkCheckoutProxyCursor: 0,
+  autoNetworkMihomoEnabled: false,
+  autoNetworkMihomoControllerUrl: DEFAULT_MIHOMO_CONTROLLER_URL,
+  autoNetworkMihomoSecret: '',
+  autoNetworkMihomoLocalProxyHost: DEFAULT_MIHOMO_LOCAL_PROXY_HOST,
+  autoNetworkMihomoLocalProxyPort: DEFAULT_MIHOMO_LOCAL_PROXY_PORT,
+  autoNetworkMihomoSignupGroup: DEFAULT_MIHOMO_GROUP_NAME,
+  autoNetworkMihomoCheckoutGroup: DEFAULT_MIHOMO_GROUP_NAME,
+  autoNetworkMihomoSignupKeyword: DEFAULT_MIHOMO_SIGNUP_KEYWORD,
+  autoNetworkMihomoCheckoutKeyword: DEFAULT_MIHOMO_CHECKOUT_KEYWORD,
+  autoNetworkMihomoSignupCursor: 0,
+  autoNetworkMihomoCheckoutCursor: 0,
   codex2apiUrl: DEFAULT_CODEX2API_URL,
   codex2apiAdminKey: '',
   customPassword: '',
@@ -2861,6 +2873,7 @@ function normalizePersistentSettingValue(key, value) {
     case 'ipProxyRegion':
       return String(value || '').trim();
     case 'autoNetworkSwitchEnabled':
+    case 'autoNetworkMihomoEnabled':
       return Boolean(value);
     case 'autoNetworkSignupProxyList':
     case 'autoNetworkCheckoutProxyList':
@@ -2869,7 +2882,24 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeBoundedIntegerSetting(value, 3, 1, 12);
     case 'autoNetworkSignupProxyCursor':
     case 'autoNetworkCheckoutProxyCursor':
+    case 'autoNetworkMihomoSignupCursor':
+    case 'autoNetworkMihomoCheckoutCursor':
       return normalizeIpProxyCurrentIndex(value, 0);
+    case 'autoNetworkMihomoControllerUrl':
+      return normalizeMihomoControllerUrl(value || '');
+    case 'autoNetworkMihomoSecret':
+      return String(value || '').trim();
+    case 'autoNetworkMihomoLocalProxyHost':
+      return normalizeMihomoLocalProxyHost(value || '');
+    case 'autoNetworkMihomoLocalProxyPort':
+      return normalizeMihomoLocalProxyPort(value || '');
+    case 'autoNetworkMihomoSignupGroup':
+    case 'autoNetworkMihomoCheckoutGroup':
+      return normalizeMihomoText(value || '', DEFAULT_MIHOMO_GROUP_NAME);
+    case 'autoNetworkMihomoSignupKeyword':
+      return normalizeMihomoText(value || '', DEFAULT_MIHOMO_SIGNUP_KEYWORD);
+    case 'autoNetworkMihomoCheckoutKeyword':
+      return normalizeMihomoText(value || '', DEFAULT_MIHOMO_CHECKOUT_KEYWORD);
     case 'ipProxyApiPool':
       return normalizeProxyPoolEntries(
         value,
@@ -11756,12 +11786,18 @@ const AUTO_NETWORK_PROFILE_CONFIG = Object.freeze({
     label: '注册 JP',
     listKey: 'autoNetworkSignupProxyList',
     cursorKey: 'autoNetworkSignupProxyCursor',
+    mihomoGroupKey: 'autoNetworkMihomoSignupGroup',
+    mihomoKeywordKey: 'autoNetworkMihomoSignupKeyword',
+    mihomoCursorKey: 'autoNetworkMihomoSignupCursor',
   }),
   [AUTO_NETWORK_CHECKOUT_PROFILE]: Object.freeze({
     expectedRegion: 'US',
     label: '支付 US',
     listKey: 'autoNetworkCheckoutProxyList',
     cursorKey: 'autoNetworkCheckoutProxyCursor',
+    mihomoGroupKey: 'autoNetworkMihomoCheckoutGroup',
+    mihomoKeywordKey: 'autoNetworkMihomoCheckoutKeyword',
+    mihomoCursorKey: 'autoNetworkMihomoCheckoutCursor',
   }),
 });
 
@@ -11816,6 +11852,114 @@ function describeIpProxyExitStatus(status = {}) {
   return parts.join('，') || '未识别出口';
 }
 
+async function ensureAutoNetworkMihomoProfile(profile = '', options = {}) {
+  const normalizedProfile = normalizeAutoNetworkProfile(profile);
+  const config = AUTO_NETWORK_PROFILE_CONFIG[normalizedProfile];
+  if (!config) {
+    return { skipped: true, reason: 'profile_not_managed' };
+  }
+  if (typeof fetchMihomoProxies !== 'function'
+    || typeof resolveMihomoGroup !== 'function'
+    || typeof getMihomoGroupCandidates !== 'function'
+    || typeof switchMihomoProxyGroup !== 'function') {
+    throw new Error('Mihomo/Clash controller helpers are not loaded.');
+  }
+  if (typeof applyIpProxySettingsFromState !== 'function' || typeof probeIpProxyExit !== 'function') {
+    throw new Error('IP proxy core is not loaded.');
+  }
+
+  const initialState = options.state || await getState();
+  const expectedRegion = config.expectedRegion;
+  const proxies = await fetchMihomoProxies(initialState);
+  const groupName = normalizeMihomoText(initialState?.[config.mihomoGroupKey], DEFAULT_MIHOMO_GROUP_NAME);
+  const group = resolveMihomoGroup(proxies, groupName);
+  if (!group) {
+    throw new Error('Mihomo/Clash controller found no selectable proxy group. Please check external-controller and group name.');
+  }
+  const candidates = getMihomoGroupCandidates(proxies, group, {
+    expectedRegion,
+    keyword: initialState?.[config.mihomoKeywordKey],
+  });
+  if (!candidates.length) {
+    throw new Error(`Mihomo/Clash group "${group.name}" has no ${expectedRegion} nodes matching keyword "${initialState?.[config.mihomoKeywordKey] || ''}".`);
+  }
+
+  const maxAttempts = Math.min(
+    candidates.length,
+    Math.max(1, Number(initialState.autoNetworkSwitchMaxAttempts) || 3)
+  );
+  let cursor = normalizeIpProxyCurrentIndex(initialState?.[config.mihomoCursorKey], 0);
+  let lastStatus = null;
+  let lastNodeName = '';
+  await addLog(`Auto network: switching ${config.label} through Mihomo group "${group.name}" (${candidates.length} candidates, expect ${expectedRegion}).`, 'info', { nodeId: options.nodeId || '' });
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    throwIfStopped();
+    const latestState = await getState();
+    const index = cursor % candidates.length;
+    const nodeName = candidates[index];
+    lastNodeName = nodeName;
+    await switchMihomoProxyGroup(latestState, group.name, nodeName);
+
+    const localPort = normalizeMihomoLocalProxyPort(latestState?.autoNetworkMihomoLocalProxyPort);
+    const updates = {
+      ipProxyEnabled: true,
+      ipProxyMode: 'account',
+      ipProxyAccountList: '',
+      ipProxyHost: normalizeMihomoLocalProxyHost(latestState?.autoNetworkMihomoLocalProxyHost),
+      ipProxyPort: localPort,
+      ipProxyProtocol: 'http',
+      ipProxyUsername: '',
+      ipProxyPassword: '',
+      ipProxyRegion: expectedRegion,
+      autoNetworkActiveProfile: normalizedProfile,
+      autoNetworkActiveExpectedRegion: expectedRegion,
+      autoNetworkMihomoActiveGroup: group.name,
+      autoNetworkMihomoActiveNode: nodeName,
+    };
+    await setState(updates);
+    broadcastDataUpdate(updates);
+
+    const applyState = { ...latestState, ...updates };
+    await applyIpProxySettingsFromState(applyState, {
+      skipExitProbe: true,
+      resetNetworkState: true,
+      forceAuthRebind: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const probeResult = await probeIpProxyExit({
+      state: applyState,
+      timeoutMs: 12000,
+      autoRotateMaxAttempts: 0,
+      authRebindMaxAttempts: 1,
+    });
+    lastStatus = probeResult?.proxyRouting || null;
+    if (isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
+      const nextCursor = (index + 1) % candidates.length;
+      const cursorPatch = { [config.mihomoCursorKey]: nextCursor };
+      await setState(cursorPatch);
+      broadcastDataUpdate(cursorPatch);
+      await addLog(`Auto network: Mihomo ${config.label} switched to "${nodeName}", exit check passed (${describeIpProxyExitStatus(lastStatus)}).`, 'ok', { nodeId: options.nodeId || '' });
+      return {
+        skipped: false,
+        provider: 'mihomo',
+        profile: normalizedProfile,
+        expectedRegion,
+        group: group.name,
+        node: nodeName,
+        index,
+        count: candidates.length,
+        status: lastStatus,
+      };
+    }
+
+    await addLog(`Auto network: Mihomo node "${nodeName}" did not match ${expectedRegion}; rotating (${attempt}/${maxAttempts}, ${describeIpProxyExitStatus(lastStatus)}).`, 'warn', { nodeId: options.nodeId || '' });
+    cursor = (index + 1) % candidates.length;
+  }
+
+  throw new Error(`Auto network: Mihomo ${config.label} failed to get ${expectedRegion} exit after ${maxAttempts} attempts. Last node: ${lastNodeName}; last status: ${describeIpProxyExitStatus(lastStatus)}.`);
+}
+
 async function ensureAutoNetworkProfileForNode(nodeId = '', options = {}) {
   const normalizedNodeId = String(nodeId || '').trim();
   const profile = normalizedNodeId === 'plus-checkout-create'
@@ -11828,6 +11972,13 @@ async function ensureAutoNetworkProfileForNode(nodeId = '', options = {}) {
   const initialState = options.state || await getState();
   if (!initialState?.autoNetworkSwitchEnabled) {
     return { skipped: true, reason: 'disabled' };
+  }
+  if (initialState?.autoNetworkMihomoEnabled) {
+    return ensureAutoNetworkMihomoProfile(profile, {
+      ...options,
+      state: initialState,
+      nodeId: normalizedNodeId,
+    });
   }
   if (!initialState?.ipProxyEnabled) {
     throw new Error('自动网络环境切换已开启，但 IP 代理未启用。请先开启 IP 代理。');

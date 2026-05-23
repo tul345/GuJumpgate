@@ -1535,6 +1535,25 @@
           return { ok: true, ...result };
         }
 
+        case 'TEST_MIHOMO_CONTROLLER': {
+          if (typeof getMihomoControllerSummary !== 'function') {
+            throw new Error('Mihomo/Clash controller helpers are not loaded.');
+          }
+          const state = await getState();
+          return await getMihomoControllerSummary(state);
+        }
+
+        case 'SWITCH_MIHOMO_PROFILE_NOW': {
+          if (typeof ensureAutoNetworkMihomoProfile !== 'function') {
+            throw new Error('Mihomo/Clash auto switch is not loaded.');
+          }
+          const profile = String(message.payload?.profile || '').trim();
+          const result = await ensureAutoNetworkMihomoProfile(profile, {
+            nodeId: profile === 'checkout' ? 'plus-checkout-create' : 'open-chatgpt',
+          });
+          return { ok: true, result };
+        }
+
         case 'REFRESH_IP_PROXY_POOL': {
           if (typeof refreshIpProxyPool !== 'function') {
             throw new Error('IP 代理池能力尚未接入。');

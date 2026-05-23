@@ -1424,6 +1424,28 @@ function updateIpProxyUI(state = latestState) {
   if (typeof inputAutoNetworkSwitchMaxAttempts !== 'undefined' && inputAutoNetworkSwitchMaxAttempts) {
     inputAutoNetworkSwitchMaxAttempts.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
   }
+  const autoNetworkMihomoEnabled = Boolean(typeof inputAutoNetworkMihomoEnabled !== 'undefined' && inputAutoNetworkMihomoEnabled?.checked);
+  [
+    typeof inputAutoNetworkMihomoEnabled !== 'undefined' ? inputAutoNetworkMihomoEnabled : null,
+    typeof inputAutoNetworkMihomoControllerUrl !== 'undefined' ? inputAutoNetworkMihomoControllerUrl : null,
+    typeof inputAutoNetworkMihomoSecret !== 'undefined' ? inputAutoNetworkMihomoSecret : null,
+    typeof inputAutoNetworkMihomoLocalProxyHost !== 'undefined' ? inputAutoNetworkMihomoLocalProxyHost : null,
+    typeof inputAutoNetworkMihomoLocalProxyPort !== 'undefined' ? inputAutoNetworkMihomoLocalProxyPort : null,
+    typeof inputAutoNetworkMihomoSignupGroup !== 'undefined' ? inputAutoNetworkMihomoSignupGroup : null,
+    typeof inputAutoNetworkMihomoSignupKeyword !== 'undefined' ? inputAutoNetworkMihomoSignupKeyword : null,
+    typeof inputAutoNetworkMihomoCheckoutGroup !== 'undefined' ? inputAutoNetworkMihomoCheckoutGroup : null,
+    typeof inputAutoNetworkMihomoCheckoutKeyword !== 'undefined' ? inputAutoNetworkMihomoCheckoutKeyword : null,
+    typeof btnAutoNetworkMihomoTest !== 'undefined' ? btnAutoNetworkMihomoTest : null,
+    typeof btnAutoNetworkMihomoSwitchSignup !== 'undefined' ? btnAutoNetworkMihomoSwitchSignup : null,
+    typeof btnAutoNetworkMihomoSwitchCheckout !== 'undefined' ? btnAutoNetworkMihomoSwitchCheckout : null,
+  ].forEach((control) => {
+    if (!control) return;
+    if (control === inputAutoNetworkMihomoEnabled) {
+      control.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
+      return;
+    }
+    control.disabled = !enabled || !isAccountMode || !autoNetworkEnabled || !autoNetworkMihomoEnabled;
+  });
   const autoSyncEnabledInput = typeof inputIpProxyAutoSyncEnabled !== 'undefined' ? inputIpProxyAutoSyncEnabled : null;
   const autoSyncIntervalInput = typeof inputIpProxyAutoSyncIntervalMinutes !== 'undefined' ? inputIpProxyAutoSyncIntervalMinutes : null;
   if (autoSyncEnabledInput) {

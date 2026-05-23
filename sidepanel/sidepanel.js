@@ -160,6 +160,18 @@ const inputAutoNetworkSwitchEnabled = document.getElementById('input-auto-networ
 const inputAutoNetworkSignupProxyList = document.getElementById('input-auto-network-signup-proxy-list');
 const inputAutoNetworkCheckoutProxyList = document.getElementById('input-auto-network-checkout-proxy-list');
 const inputAutoNetworkSwitchMaxAttempts = document.getElementById('input-auto-network-switch-max-attempts');
+const inputAutoNetworkMihomoEnabled = document.getElementById('input-auto-network-mihomo-enabled');
+const inputAutoNetworkMihomoControllerUrl = document.getElementById('input-auto-network-mihomo-controller-url');
+const inputAutoNetworkMihomoSecret = document.getElementById('input-auto-network-mihomo-secret');
+const inputAutoNetworkMihomoLocalProxyHost = document.getElementById('input-auto-network-mihomo-local-proxy-host');
+const inputAutoNetworkMihomoLocalProxyPort = document.getElementById('input-auto-network-mihomo-local-proxy-port');
+const inputAutoNetworkMihomoSignupGroup = document.getElementById('input-auto-network-mihomo-signup-group');
+const inputAutoNetworkMihomoSignupKeyword = document.getElementById('input-auto-network-mihomo-signup-keyword');
+const inputAutoNetworkMihomoCheckoutGroup = document.getElementById('input-auto-network-mihomo-checkout-group');
+const inputAutoNetworkMihomoCheckoutKeyword = document.getElementById('input-auto-network-mihomo-checkout-keyword');
+const btnAutoNetworkMihomoTest = document.getElementById('btn-auto-network-mihomo-test');
+const btnAutoNetworkMihomoSwitchSignup = document.getElementById('btn-auto-network-mihomo-switch-signup');
+const btnAutoNetworkMihomoSwitchCheckout = document.getElementById('btn-auto-network-mihomo-switch-checkout');
 const btnAutoNetworkSignupImport = document.getElementById('btn-auto-network-signup-import');
 const btnAutoNetworkCheckoutImport = document.getElementById('btn-auto-network-checkout-import');
 const btnAutoNetworkCopyMainToSignup = document.getElementById('btn-auto-network-copy-main-to-signup');
@@ -4128,6 +4140,17 @@ function collectSettingsPayload() {
         ? inputAutoNetworkSwitchMaxAttempts.value
         : latestState?.autoNetworkSwitchMaxAttempts || 3
     ).trim(), 10) || 3))),
+    autoNetworkMihomoEnabled: Boolean(inputAutoNetworkMihomoEnabled?.checked),
+    autoNetworkMihomoControllerUrl: String(inputAutoNetworkMihomoControllerUrl?.value || latestState?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9090').trim(),
+    autoNetworkMihomoSecret: String(inputAutoNetworkMihomoSecret?.value || latestState?.autoNetworkMihomoSecret || '').trim(),
+    autoNetworkMihomoLocalProxyHost: String(inputAutoNetworkMihomoLocalProxyHost?.value || latestState?.autoNetworkMihomoLocalProxyHost || '127.0.0.1').trim(),
+    autoNetworkMihomoLocalProxyPort: String(Math.max(1, Math.min(65535, Number.parseInt(String(
+      inputAutoNetworkMihomoLocalProxyPort?.value || latestState?.autoNetworkMihomoLocalProxyPort || 7890
+    ).trim(), 10) || 7890))),
+    autoNetworkMihomoSignupGroup: String(inputAutoNetworkMihomoSignupGroup?.value || latestState?.autoNetworkMihomoSignupGroup || 'GLOBAL').trim(),
+    autoNetworkMihomoCheckoutGroup: String(inputAutoNetworkMihomoCheckoutGroup?.value || latestState?.autoNetworkMihomoCheckoutGroup || 'GLOBAL').trim(),
+    autoNetworkMihomoSignupKeyword: String(inputAutoNetworkMihomoSignupKeyword?.value || latestState?.autoNetworkMihomoSignupKeyword || '日本,JP,Japan').trim(),
+    autoNetworkMihomoCheckoutKeyword: String(inputAutoNetworkMihomoCheckoutKeyword?.value || latestState?.autoNetworkMihomoCheckoutKeyword || '美国,US,USA,United States').trim(),
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
     plusModeEnabled: fixedPlusModeEnabled,
@@ -9733,6 +9756,33 @@ function applySettingsState(state) {
     const attempts = Number.parseInt(String(state?.autoNetworkSwitchMaxAttempts ?? '').trim(), 10);
     inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
   }
+  if (inputAutoNetworkMihomoEnabled) {
+    inputAutoNetworkMihomoEnabled.checked = Boolean(state?.autoNetworkMihomoEnabled);
+  }
+  if (inputAutoNetworkMihomoControllerUrl) {
+    inputAutoNetworkMihomoControllerUrl.value = String(state?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9090');
+  }
+  if (inputAutoNetworkMihomoSecret) {
+    inputAutoNetworkMihomoSecret.value = String(state?.autoNetworkMihomoSecret || '');
+  }
+  if (inputAutoNetworkMihomoLocalProxyHost) {
+    inputAutoNetworkMihomoLocalProxyHost.value = String(state?.autoNetworkMihomoLocalProxyHost || '127.0.0.1');
+  }
+  if (inputAutoNetworkMihomoLocalProxyPort) {
+    inputAutoNetworkMihomoLocalProxyPort.value = String(state?.autoNetworkMihomoLocalProxyPort || '7890');
+  }
+  if (inputAutoNetworkMihomoSignupGroup) {
+    inputAutoNetworkMihomoSignupGroup.value = String(state?.autoNetworkMihomoSignupGroup || 'GLOBAL');
+  }
+  if (inputAutoNetworkMihomoSignupKeyword) {
+    inputAutoNetworkMihomoSignupKeyword.value = String(state?.autoNetworkMihomoSignupKeyword || '日本,JP,Japan');
+  }
+  if (inputAutoNetworkMihomoCheckoutGroup) {
+    inputAutoNetworkMihomoCheckoutGroup.value = String(state?.autoNetworkMihomoCheckoutGroup || 'GLOBAL');
+  }
+  if (inputAutoNetworkMihomoCheckoutKeyword) {
+    inputAutoNetworkMihomoCheckoutKeyword.value = String(state?.autoNetworkMihomoCheckoutKeyword || '美国,US,USA,United States');
+  }
   if (typeof setIpProxyMode === 'function') {
     setIpProxyMode(activeIpProxyProfile.mode);
   }
@@ -14351,6 +14401,13 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   inputIpProxyPassword,
   inputAutoNetworkSignupProxyList,
   inputAutoNetworkCheckoutProxyList,
+  inputAutoNetworkMihomoControllerUrl,
+  inputAutoNetworkMihomoSecret,
+  inputAutoNetworkMihomoLocalProxyHost,
+  inputAutoNetworkMihomoSignupGroup,
+  inputAutoNetworkMihomoSignupKeyword,
+  inputAutoNetworkMihomoCheckoutGroup,
+  inputAutoNetworkMihomoCheckoutKeyword,
 ].forEach((input) => {
   input?.addEventListener('input', () => {
     markSettingsDirty(true);
@@ -14369,6 +14426,14 @@ inputAutoNetworkSwitchEnabled?.addEventListener('change', () => {
   saveSettings({ silent: true }).catch(() => {});
 });
 
+inputAutoNetworkMihomoEnabled?.addEventListener('change', () => {
+  markSettingsDirty(true);
+  if (typeof updateIpProxyUI === 'function') {
+    updateIpProxyUI(latestState);
+  }
+  saveSettings({ silent: true }).catch(() => {});
+});
+
 inputAutoNetworkSwitchMaxAttempts?.addEventListener('input', () => {
   markSettingsDirty(true);
   scheduleSettingsAutoSave();
@@ -14378,6 +14443,41 @@ inputAutoNetworkSwitchMaxAttempts?.addEventListener('blur', () => {
   inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
   saveSettings({ silent: true }).catch(() => {});
 });
+
+inputAutoNetworkMihomoLocalProxyPort?.addEventListener('input', () => {
+  markSettingsDirty(true);
+  scheduleSettingsAutoSave();
+});
+inputAutoNetworkMihomoLocalProxyPort?.addEventListener('blur', () => {
+  const port = Number.parseInt(String(inputAutoNetworkMihomoLocalProxyPort.value || '').trim(), 10);
+  inputAutoNetworkMihomoLocalProxyPort.value = String(Math.max(1, Math.min(65535, Number.isFinite(port) ? port : 7890)));
+  saveSettings({ silent: true }).catch(() => {});
+});
+
+async function testMihomoControllerFromPanel() {
+  await saveSettings({ silent: true });
+  const response = await chrome.runtime.sendMessage({ type: 'TEST_MIHOMO_CONTROLLER', source: 'sidepanel' });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  const groups = Array.isArray(response?.groups) ? response.groups : [];
+  const preview = groups.slice(0, 3).map((group) => `${group.name}(${group.count})`).join(' / ');
+  showToast(`Clash 已连接：${groups.length} 个分组，${response?.nodeCount || 0} 个节点${preview ? `；${preview}` : ''}`, 'success');
+}
+
+async function switchMihomoProfileFromPanel(profile) {
+  await saveSettings({ silent: true });
+  const response = await chrome.runtime.sendMessage({
+    type: 'SWITCH_MIHOMO_PROFILE_NOW',
+    source: 'sidepanel',
+    payload: { profile },
+  });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  const result = response?.result || {};
+  showToast(`已切换 ${profile === 'checkout' ? 'US' : 'JP'}：${result.node || '未知节点'}`, 'success');
+}
 
 function normalizeAutoNetworkImportedProxyText(text = '') {
   return normalizeIpProxyAccountList(String(text || '')
@@ -14452,6 +14552,24 @@ btnAutoNetworkCopyMainToSignup?.addEventListener('click', () => {
 });
 btnAutoNetworkCopyMainToCheckout?.addEventListener('click', () => {
   copyMainIpProxyPoolToAutoNetwork(inputAutoNetworkCheckoutProxyList, 'US 池');
+});
+
+btnAutoNetworkMihomoTest?.addEventListener('click', () => {
+  testMihomoControllerFromPanel().catch((error) => {
+    showToast(error?.message || 'Clash controller test failed.', 'error');
+  });
+});
+
+btnAutoNetworkMihomoSwitchSignup?.addEventListener('click', () => {
+  switchMihomoProfileFromPanel('signup').catch((error) => {
+    showToast(error?.message || 'JP switch failed.', 'error');
+  });
+});
+
+btnAutoNetworkMihomoSwitchCheckout?.addEventListener('click', () => {
+  switchMihomoProfileFromPanel('checkout').catch((error) => {
+    showToast(error?.message || 'US switch failed.', 'error');
+  });
 });
 
 inputIpProxyUsername?.addEventListener('paste', () => {
@@ -15916,6 +16034,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         || message.payload.autoNetworkSwitchMaxAttempts !== undefined
         || message.payload.autoNetworkSignupProxyCursor !== undefined
         || message.payload.autoNetworkCheckoutProxyCursor !== undefined
+        || message.payload.autoNetworkMihomoEnabled !== undefined
+        || message.payload.autoNetworkMihomoControllerUrl !== undefined
+        || message.payload.autoNetworkMihomoSecret !== undefined
+        || message.payload.autoNetworkMihomoLocalProxyHost !== undefined
+        || message.payload.autoNetworkMihomoLocalProxyPort !== undefined
+        || message.payload.autoNetworkMihomoSignupGroup !== undefined
+        || message.payload.autoNetworkMihomoCheckoutGroup !== undefined
+        || message.payload.autoNetworkMihomoSignupKeyword !== undefined
+        || message.payload.autoNetworkMihomoCheckoutKeyword !== undefined
+        || message.payload.autoNetworkMihomoSignupCursor !== undefined
+        || message.payload.autoNetworkMihomoCheckoutCursor !== undefined
+        || message.payload.autoNetworkMihomoActiveGroup !== undefined
+        || message.payload.autoNetworkMihomoActiveNode !== undefined
         || message.payload.autoNetworkActiveProfile !== undefined
         || message.payload.autoNetworkActiveExpectedRegion !== undefined
       ) {
@@ -15985,6 +16116,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message.payload.autoNetworkSwitchMaxAttempts !== undefined && inputAutoNetworkSwitchMaxAttempts) {
           const attempts = Number.parseInt(String(message.payload.autoNetworkSwitchMaxAttempts ?? '').trim(), 10);
           inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
+        }
+        if (message.payload.autoNetworkMihomoEnabled !== undefined && inputAutoNetworkMihomoEnabled) {
+          inputAutoNetworkMihomoEnabled.checked = Boolean(message.payload.autoNetworkMihomoEnabled);
+        }
+        if (message.payload.autoNetworkMihomoControllerUrl !== undefined && inputAutoNetworkMihomoControllerUrl) {
+          inputAutoNetworkMihomoControllerUrl.value = String(message.payload.autoNetworkMihomoControllerUrl || '');
+        }
+        if (message.payload.autoNetworkMihomoSecret !== undefined && inputAutoNetworkMihomoSecret) {
+          inputAutoNetworkMihomoSecret.value = String(message.payload.autoNetworkMihomoSecret || '');
+        }
+        if (message.payload.autoNetworkMihomoLocalProxyHost !== undefined && inputAutoNetworkMihomoLocalProxyHost) {
+          inputAutoNetworkMihomoLocalProxyHost.value = String(message.payload.autoNetworkMihomoLocalProxyHost || '');
+        }
+        if (message.payload.autoNetworkMihomoLocalProxyPort !== undefined && inputAutoNetworkMihomoLocalProxyPort) {
+          inputAutoNetworkMihomoLocalProxyPort.value = String(message.payload.autoNetworkMihomoLocalProxyPort || '');
+        }
+        if (message.payload.autoNetworkMihomoSignupGroup !== undefined && inputAutoNetworkMihomoSignupGroup) {
+          inputAutoNetworkMihomoSignupGroup.value = String(message.payload.autoNetworkMihomoSignupGroup || '');
+        }
+        if (message.payload.autoNetworkMihomoCheckoutGroup !== undefined && inputAutoNetworkMihomoCheckoutGroup) {
+          inputAutoNetworkMihomoCheckoutGroup.value = String(message.payload.autoNetworkMihomoCheckoutGroup || '');
+        }
+        if (message.payload.autoNetworkMihomoSignupKeyword !== undefined && inputAutoNetworkMihomoSignupKeyword) {
+          inputAutoNetworkMihomoSignupKeyword.value = String(message.payload.autoNetworkMihomoSignupKeyword || '');
+        }
+        if (message.payload.autoNetworkMihomoCheckoutKeyword !== undefined && inputAutoNetworkMihomoCheckoutKeyword) {
+          inputAutoNetworkMihomoCheckoutKeyword.value = String(message.payload.autoNetworkMihomoCheckoutKeyword || '');
         }
         if (hasIpProxyConfigPayload) {
           const activeProxyProfile = typeof getIpProxyServiceProfile === 'function'
