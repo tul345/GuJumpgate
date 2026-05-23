@@ -1580,7 +1580,17 @@
             throw new Error(result?.error || `Dedicated Mihomo helper failed with ${response.status}`);
           }
           if (message.type === 'START_DEDICATED_MIHOMO_HELPER') {
+            const backupPatch = {
+              sharedMihomoControllerUrl: state?.sharedMihomoControllerUrl || state?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9097',
+              sharedMihomoSecret: state?.sharedMihomoSecret || state?.autoNetworkMihomoSecret || '',
+              sharedMihomoLocalProxyHost: state?.sharedMihomoLocalProxyHost || state?.autoNetworkMihomoLocalProxyHost || '127.0.0.1',
+              sharedMihomoLocalProxyPort: state?.sharedMihomoLocalProxyPort || state?.autoNetworkMihomoLocalProxyPort || '7897',
+              sharedMihomoSignupGroup: state?.sharedMihomoSignupGroup || state?.autoNetworkMihomoSignupGroup || 'GLOBAL',
+              sharedMihomoCheckoutGroup: state?.sharedMihomoCheckoutGroup || state?.autoNetworkMihomoCheckoutGroup || 'GLOBAL',
+              dedicatedMihomoActive: true,
+            };
             const patch = {
+              ...backupPatch,
               autoNetworkMihomoControllerUrl: result.controllerUrl || `http://127.0.0.1:${state?.dedicatedMihomoControllerPort || '9197'}`,
               autoNetworkMihomoLocalProxyHost: result.localProxyHost || '127.0.0.1',
               autoNetworkMihomoLocalProxyPort: String(result.mixedPort || state?.dedicatedMihomoMixedPort || '7898'),
@@ -1590,6 +1600,18 @@
             };
             await setState(patch);
             broadcastDataUpdate(patch);
+          } else if (message.type === 'STOP_DEDICATED_MIHOMO_HELPER') {
+            const restorePatch = {
+              dedicatedMihomoActive: false,
+              autoNetworkMihomoControllerUrl: state?.sharedMihomoControllerUrl || 'http://127.0.0.1:9097',
+              autoNetworkMihomoSecret: state?.sharedMihomoSecret || '',
+              autoNetworkMihomoLocalProxyHost: state?.sharedMihomoLocalProxyHost || '127.0.0.1',
+              autoNetworkMihomoLocalProxyPort: String(state?.sharedMihomoLocalProxyPort || '7897'),
+              autoNetworkMihomoSignupGroup: state?.sharedMihomoSignupGroup || 'GLOBAL',
+              autoNetworkMihomoCheckoutGroup: state?.sharedMihomoCheckoutGroup || 'GLOBAL',
+            };
+            await setState(restorePatch);
+            broadcastDataUpdate(restorePatch);
           }
           return { ok: true, result };
         }

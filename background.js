@@ -948,6 +948,13 @@ const PERSISTED_SETTING_DEFAULTS = {
   dedicatedMihomoWorkDir: DEFAULT_DEDICATED_MIHOMO_WORK_DIR,
   dedicatedMihomoControllerPort: DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT,
   dedicatedMihomoMixedPort: DEFAULT_DEDICATED_MIHOMO_MIXED_PORT,
+  dedicatedMihomoActive: false,
+  sharedMihomoControllerUrl: DEFAULT_MIHOMO_CONTROLLER_URL,
+  sharedMihomoSecret: '',
+  sharedMihomoLocalProxyHost: DEFAULT_MIHOMO_LOCAL_PROXY_HOST,
+  sharedMihomoLocalProxyPort: DEFAULT_MIHOMO_LOCAL_PROXY_PORT,
+  sharedMihomoSignupGroup: DEFAULT_MIHOMO_GROUP_NAME,
+  sharedMihomoCheckoutGroup: DEFAULT_MIHOMO_GROUP_NAME,
   codex2apiUrl: DEFAULT_CODEX2API_URL,
   codex2apiAdminKey: '',
   customPassword: '',
@@ -2923,6 +2930,19 @@ function normalizePersistentSettingValue(key, value) {
       return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT)));
     case 'dedicatedMihomoMixedPort':
       return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_MIXED_PORT)));
+    case 'dedicatedMihomoActive':
+      return Boolean(value);
+    case 'sharedMihomoControllerUrl':
+      return normalizeMihomoControllerUrl(value || DEFAULT_MIHOMO_CONTROLLER_URL);
+    case 'sharedMihomoSecret':
+      return String(value || '').trim();
+    case 'sharedMihomoLocalProxyHost':
+      return normalizeMihomoLocalProxyHost(value || DEFAULT_MIHOMO_LOCAL_PROXY_HOST);
+    case 'sharedMihomoLocalProxyPort':
+      return normalizeMihomoLocalProxyPort(value || DEFAULT_MIHOMO_LOCAL_PROXY_PORT);
+    case 'sharedMihomoSignupGroup':
+    case 'sharedMihomoCheckoutGroup':
+      return normalizeMihomoText(value || '', DEFAULT_MIHOMO_GROUP_NAME);
     case 'ipProxyApiPool':
       return normalizeProxyPoolEntries(
         value,
