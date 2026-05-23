@@ -1,6 +1,54 @@
 (function attachBackgroundMessageRouter(root, factory) {
   root.MultiPageBackgroundMessageRouter = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundMessageRouterModule() {
+  const DEDICATED_MIHOMO_NATIVE_HOST = 'com.gujumpgate.dedicated_mihomo_launcher';
+
+  function parseLocalHelperAddress(helperBaseUrl = '') {
+    try {
+      const parsed = new URL(String(helperBaseUrl || 'http://127.0.0.1:18768'));
+      return {
+        host: parsed.hostname || '127.0.0.1',
+        port: Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80)) || 18768,
+      };
+    } catch {
+      return { host: '127.0.0.1', port: 18768 };
+    }
+  }
+
+  async function sendDedicatedMihomoNativeMessage(payload = {}) {
+    if (typeof chrome === 'undefined' || !chrome?.runtime?.sendNativeMessage) {
+      throw new Error('当前浏览器不支持 Native Messaging，无法自动启动本地 Helper。');
+    }
+    return await new Promise((resolve, reject) => {
+      chrome.runtime.sendNativeMessage(DEDICATED_MIHOMO_NATIVE_HOST, payload, (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          reject(new Error(runtimeError.message || String(runtimeError)));
+          return;
+        }
+        resolve(response || {});
+      });
+    });
+  }
+
+  async function startDedicatedMihomoHelperServerViaNative(helperBaseUrl = '') {
+    const address = parseLocalHelperAddress(helperBaseUrl);
+    const response = await sendDedicatedMihomoNativeMessage({
+      type: 'START_DEDICATED_MIHOMO_HELPER_SERVER',
+      host: address.host,
+      port: address.port,
+    });
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Native launcher failed to start Dedicated Mihomo helper.');
+    }
+    return response;
+  }
+
+  function getDedicatedMihomoNativeInstallHint() {
+    const extensionId = (typeof chrome !== 'undefined' && chrome?.runtime?.id) ? chrome.runtime.id : 'YOUR_EXTENSION_ID';
+    return `首次使用专用 Mihomo 自动启动前，需要先注册一次 Native Host。请在项目目录运行：install-dedicated-mihomo-native-host.bat ${extensionId}；注册后重载扩展，再点“启动专用”即可自动拉起本地脚本。`;
+  }
+
   function createMessageRouter(deps = {}) {
     const {
       addLog,
@@ -33,6 +81,7 @@
       executeNode,
       executeNodeViaCompletionSignal,
       exportSettingsBundle,
+      restoreLatestSettingsBackup,
       fetchHostedCheckoutVerificationCodeManually = null,
       fetchGeneratedEmail,
       refreshGpcCardBalance,
@@ -1564,11 +1613,31 @@
               groupName: state?.autoNetworkMihomoSignupGroup || 'GLOBAL',
             }
             : {};
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
+          let response = null;
+          try {
+            response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+          } catch (fetchError) {
+            if (message.type !== 'START_DEDICATED_MIHOMO_HELPER') {
+              throw fetchError;
+            }
+            try {
+              await startDedicatedMihomoHelperServerViaNative(helperBaseUrl);
+            } catch (nativeError) {
+              throw new Error(
+                `专用 Mihomo Helper 未运行，并且本次未能自动拉起：${nativeError?.message || nativeError}。`
+                + getDedicatedMihomoNativeInstallHint()
+              );
+            }
+            response = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+          }
           const text = await response.text();
           let result = {};
           try {
@@ -1599,6 +1668,7 @@
               autoNetworkMihomoCheckoutGroup: result.groupName || state?.autoNetworkMihomoCheckoutGroup || 'GLOBAL',
             };
             await setState(patch);
+            await setPersistentSettings(patch);
             broadcastDataUpdate(patch);
           } else if (message.type === 'STOP_DEDICATED_MIHOMO_HELPER') {
             const restorePatch = {
@@ -1611,6 +1681,7 @@
               autoNetworkMihomoCheckoutGroup: state?.sharedMihomoCheckoutGroup || 'GLOBAL',
             };
             await setState(restorePatch);
+            await setPersistentSettings(restorePatch);
             broadcastDataUpdate(restorePatch);
           }
           return { ok: true, result };
@@ -1745,6 +1816,14 @@
         case 'IMPORT_SETTINGS': {
           const state = await importSettingsBundle(message.payload?.config || null);
           return { ok: true, state };
+        }
+
+        case 'RESTORE_SETTINGS_BACKUP': {
+          if (typeof restoreLatestSettingsBackup !== 'function') {
+            throw new Error('配置备份恢复能力尚未接入。');
+          }
+          const result = await restoreLatestSettingsBackup();
+          return { ok: true, ...result };
         }
 
         case 'REFRESH_GPC_CARD_BALANCE': {

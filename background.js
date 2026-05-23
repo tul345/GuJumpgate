@@ -1121,6 +1121,8 @@ const PERSISTED_SETTING_DEFAULTS = {
 const PERSISTED_SETTING_KEYS = Object.keys(PERSISTED_SETTING_DEFAULTS);
 const SETTINGS_EXPORT_SCHEMA_VERSION = 1;
 const SETTINGS_EXPORT_FILENAME_PREFIX = 'multipage-settings';
+const SETTINGS_BACKUP_STORAGE_KEY = 'multipage-settings-backups';
+const SETTINGS_BACKUP_MAX_ITEMS = 10;
 const STEP6_REGISTRATION_SUCCESS_WAIT_MS = 4000;
 
 const DEFAULT_STATE = {
@@ -2927,9 +2929,9 @@ function normalizePersistentSettingValue(key, value) {
     case 'dedicatedMihomoWorkDir':
       return String(value || '').trim();
     case 'dedicatedMihomoControllerPort':
-      return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT)));
+      return String(normalizeBoundedIntegerSetting(value, Number(DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT), 1, 65535));
     case 'dedicatedMihomoMixedPort':
-      return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_MIXED_PORT)));
+      return String(normalizeBoundedIntegerSetting(value, Number(DEFAULT_DEDICATED_MIHOMO_MIXED_PORT), 1, 65535));
     case 'dedicatedMihomoActive':
       return Boolean(value);
     case 'sharedMihomoControllerUrl':
@@ -3605,10 +3607,53 @@ function normalizeLocalCpaJsonRelativeAuthDir(rawValue = '') {
   return String(rawValue || '').trim() || DEFAULT_LOCAL_CPA_JSON_RELATIVE_AUTH_DIR;
 }
 
+function normalizeSettingsBackupEntries(value) {
+  return Array.isArray(value)
+    ? value
+      .filter((entry) => entry && typeof entry === 'object' && entry.settings && typeof entry.settings === 'object')
+      .slice(0, SETTINGS_BACKUP_MAX_ITEMS)
+    : [];
+}
+
+function buildSettingsBackupFingerprint(settings = {}) {
+  return JSON.stringify(settings || {});
+}
+
+async function backupPersistedSettingsBeforeWrite(reason = 'settings-save', changedKeys = []) {
+  const settings = await getPersistedSettings();
+  const stored = await chrome.storage.local.get([SETTINGS_BACKUP_STORAGE_KEY]);
+  const entries = normalizeSettingsBackupEntries(stored?.[SETTINGS_BACKUP_STORAGE_KEY]);
+  const fingerprint = buildSettingsBackupFingerprint(settings);
+  const latestFingerprint = entries[0]?.fingerprint || buildSettingsBackupFingerprint(entries[0]?.settings || {});
+
+  if (latestFingerprint === fingerprint) {
+    return;
+  }
+
+  const manifestVersion = chrome.runtime?.getManifest?.().version || '';
+  const backupEntry = {
+    schemaVersion: SETTINGS_EXPORT_SCHEMA_VERSION,
+    backedUpAt: new Date().toISOString(),
+    reason: String(reason || 'settings-save'),
+    changedKeys: Array.isArray(changedKeys) ? changedKeys.map((key) => String(key)).filter(Boolean) : [],
+    extensionVersion: manifestVersion,
+    fingerprint,
+    settings,
+  };
+
+  await chrome.storage.local.set({
+    [SETTINGS_BACKUP_STORAGE_KEY]: [
+      backupEntry,
+      ...entries,
+    ].slice(0, SETTINGS_BACKUP_MAX_ITEMS),
+  });
+}
+
 async function setPersistentSettings(updates) {
   const persistedUpdates = buildPersistentSettingsPayload(updates);
 
   if (Object.keys(persistedUpdates).length > 0) {
+    await backupPersistedSettingsBeforeWrite('setPersistentSettings', Object.keys(persistedUpdates));
     await chrome.storage.local.set(persistedUpdates);
   }
 }
@@ -3697,6 +3742,26 @@ async function importSettingsBundle(configBundle) {
   });
 
   return getState();
+}
+
+async function restoreLatestSettingsBackup() {
+  const stored = await chrome.storage.local.get([SETTINGS_BACKUP_STORAGE_KEY]);
+  const entries = normalizeSettingsBackupEntries(stored?.[SETTINGS_BACKUP_STORAGE_KEY]);
+  const latestBackup = entries[0] || null;
+  if (!latestBackup?.settings) {
+    throw new Error('暂无可恢复的配置备份。');
+  }
+
+  const state = await importSettingsBundle({
+    schemaVersion: SETTINGS_EXPORT_SCHEMA_VERSION,
+    settings: latestBackup.settings,
+  });
+
+  return {
+    state,
+    backedUpAt: latestBackup.backedUpAt || '',
+    changedKeys: Array.isArray(latestBackup.changedKeys) ? latestBackup.changedKeys : [],
+  };
 }
 
 function broadcastDataUpdate(payload) {
@@ -11986,6 +12051,21 @@ async function ensureAutoNetworkMihomoProfile(profile = '', options = {}) {
         authRebindMaxAttempts: 1,
       });
       lastStatus = probeResult?.proxyRouting || null;
+      if (!isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
+        await addLog(
+          `Auto network: Mihomo node "${nodeName}" first exit check is not ${expectedRegion} (${describeIpProxyExitStatus(lastStatus)}); waiting and rechecking once to avoid stale proxy connections.`,
+          'warn',
+          { nodeId: options.nodeId || '' }
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        const retryProbeResult = await probeIpProxyExit({
+          state: { ...applyState, _autoNetworkProbeRetryAt: Date.now() },
+          timeoutMs: 12000,
+          autoRotateMaxAttempts: 0,
+          authRebindMaxAttempts: 1,
+        });
+        lastStatus = retryProbeResult?.proxyRouting || lastStatus;
+      }
       if (isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
         if (!fixedNode && !options.skipCursorAdvance) {
           const nextCursor = (index + 1) % candidates.length;
@@ -14012,6 +14092,7 @@ const messageRouter = self.MultiPageBackgroundMessageRouter?.createMessageRouter
   normalizeSignupMethod,
   canUsePhoneSignup,
   resolveSignupMethod,
+  restoreLatestSettingsBackup,
   validateAutoRunStart: validateAutoRunStartState,
   getTabId,
   getStopRequested: () => stopRequested,

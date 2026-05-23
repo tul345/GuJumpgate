@@ -18,7 +18,8 @@
     "cookies",
     "storage",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://*.icloud.com/*",

@@ -801,6 +801,14 @@ header {
   gap: 8px;
 }
 
+.mihomo-network-body {
+  display: contents;
+}
+
+.mihomo-network-card.is-collapsed {
+  gap: 0;
+}
+
 .mihomo-network-card .data-row {
   align-items: center;
 }

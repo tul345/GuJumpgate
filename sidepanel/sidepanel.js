@@ -79,6 +79,7 @@ const btnConfigMenu = document.getElementById('btn-config-menu');
 const configMenu = document.getElementById('config-menu');
 const btnExportSettings = document.getElementById('btn-export-settings');
 const btnImportSettings = document.getElementById('btn-import-settings');
+const btnRestoreSettingsBackup = document.getElementById('btn-restore-settings-backup');
 const inputImportSettingsFile = document.getElementById('input-import-settings-file');
 const selectPanelMode = document.getElementById('select-panel-mode');
 const rowLocalCpaJsonPluginDir = document.getElementById('row-local-cpa-json-plugin-dir');
@@ -156,6 +157,8 @@ const btnToggleIpProxyPassword = document.getElementById('btn-toggle-ip-proxy-pa
 const rowIpProxyRegion = document.getElementById('row-ip-proxy-region');
 const inputIpProxyRegion = document.getElementById('input-ip-proxy-region');
 const rowAutoNetworkSwitch = document.getElementById('row-auto-network-switch');
+const mihomoNetworkSection = document.getElementById('mihomo-network-section');
+const mihomoNetworkBody = document.getElementById('mihomo-network-body');
 const inputAutoNetworkSwitchEnabled = document.getElementById('input-auto-network-switch-enabled');
 const inputAutoNetworkSignupProxyList = document.getElementById('input-auto-network-signup-proxy-list');
 const inputAutoNetworkCheckoutProxyList = document.getElementById('input-auto-network-checkout-proxy-list');
@@ -1364,6 +1367,7 @@ let settingsDirty = false;
 let settingsSaveInFlight = false;
 let settingsAutoSaveTimer = null;
 let settingsSaveRevision = 0;
+let settingsRestoreReady = false;
 let signupPhoneInputDirty = false;
 let signupPhoneInputFocused = false;
 let signupPhoneInputPersistPromise = null;
@@ -2319,6 +2323,9 @@ function updateConfigMenuControls() {
   if (btnImportSettings) {
     btnImportSettings.disabled = importLocked;
   }
+  if (btnRestoreSettingsBackup) {
+    btnRestoreSettingsBackup.disabled = importLocked;
+  }
 }
 
 function closeConfigMenu() {
@@ -2341,7 +2348,15 @@ async function waitForSettingsSaveIdle() {
   }
 }
 
+async function waitForSettingsRestoreReady(timeoutMs = 5000) {
+  const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+  while (!settingsRestoreReady && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function flushPendingSettingsBeforeExport() {
+  await waitForSettingsRestoreReady();
   clearTimeout(settingsAutoSaveTimer);
   await waitForSettingsSaveIdle();
   if (settingsDirty) {
@@ -2350,6 +2365,7 @@ async function flushPendingSettingsBeforeExport() {
 }
 
 async function settlePendingSettingsBeforeImport() {
+  await waitForSettingsRestoreReady();
   clearTimeout(settingsAutoSaveTimer);
   await waitForSettingsSaveIdle();
 }
@@ -2481,6 +2497,24 @@ function renderMihomoPlanDisplay(state = latestState) {
   const text = `${parts.join(' / ')}${createdText ? ` @ ${createdText}` : ''}`;
   displayAutoNetworkMihomoPlan.textContent = text;
   displayAutoNetworkMihomoPlan.title = text;
+}
+
+function updateAutoNetworkPanelVisibility(state = latestState) {
+  const enabled = inputAutoNetworkSwitchEnabled
+    ? Boolean(inputAutoNetworkSwitchEnabled.checked)
+    : Boolean(state?.autoNetworkSwitchEnabled);
+  if (mihomoNetworkBody) {
+    mihomoNetworkBody.hidden = !enabled;
+  }
+  if (mihomoNetworkSection) {
+    mihomoNetworkSection.classList.toggle('is-collapsed', !enabled);
+  }
+  if (inputAutoNetworkSwitchEnabled) {
+    inputAutoNetworkSwitchEnabled.setAttribute('aria-expanded', String(enabled));
+    if (mihomoNetworkBody?.id) {
+      inputAutoNetworkSwitchEnabled.setAttribute('aria-controls', mihomoNetworkBody.id);
+    }
+  }
 }
 
 function renderDedicatedMihomoStatus(state = latestState) {
@@ -9251,13 +9285,16 @@ function markSettingsDirty(isDirty = true) {
 }
 
 function updateSaveButtonState() {
-  btnSaveSettings.disabled = settingsSaveInFlight || !settingsDirty;
+  btnSaveSettings.disabled = !settingsRestoreReady || settingsSaveInFlight || !settingsDirty;
   updateConfigMenuControls();
   btnSaveSettings.textContent = settingsSaveInFlight ? '保存中' : '保存';
 }
 
 function scheduleSettingsAutoSave() {
   clearTimeout(settingsAutoSaveTimer);
+  if (!settingsRestoreReady) {
+    return;
+  }
   settingsAutoSaveTimer = setTimeout(() => {
     saveSettings({ silent: true }).catch(() => { });
   }, 500);
@@ -9285,6 +9322,13 @@ async function sendRuntimeMessageWithTimeout(message, timeoutMs = 20000, timeout
 async function saveSettings(options = {}) {
   const { silent = false, force = false } = options;
   clearTimeout(settingsAutoSaveTimer);
+
+  if (!settingsRestoreReady) {
+    if (!silent) {
+      showToast('配置还在恢复中，请稍后再保存。', 'warn', 1800);
+    }
+    return;
+  }
 
   if (!force && !settingsDirty && !settingsSaveInFlight && silent) {
     return;
@@ -9333,6 +9377,7 @@ async function saveSettings(options = {}) {
 }
 
 async function persistCurrentSettingsForAction() {
+  await waitForSettingsRestoreReady();
   clearTimeout(settingsAutoSaveTimer);
   await waitForSettingsSaveIdle();
   await persistSignupPhoneInputForAction();
@@ -9877,6 +9922,7 @@ function applySettingsState(state) {
   if (typeof updateIpProxyUI === 'function') {
     updateIpProxyUI(latestState);
   }
+  updateAutoNetworkPanelVisibility(latestState);
   inputCodex2ApiUrl.value = state?.codex2apiUrl || '';
   inputCodex2ApiAdminKey.value = state?.codex2apiAdminKey || '';
   const restoredMailProvider = (
@@ -10282,6 +10328,9 @@ async function restoreState() {
     if (typeof applyOperationDelayState === 'function') {
       applyOperationDelayState(undefined, { restoreFailed: true });
     }
+  } finally {
+    settingsRestoreReady = true;
+    updateSaveButtonState();
   }
 }
 
@@ -13044,6 +13093,48 @@ async function importSettingsFromFile(file) {
   }
 }
 
+async function restoreSettingsBackup() {
+  configActionInFlight = true;
+  closeConfigMenu();
+  updateConfigMenuControls();
+
+  try {
+    await settlePendingSettingsBeforeImport();
+    const confirmed = await openConfirmModal({
+      title: '恢复上次备份',
+      message: '确认恢复最近一次自动备份的配置吗？恢复后会覆盖当前配置。',
+      confirmLabel: '确认恢复',
+      confirmVariant: 'btn-danger',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await chrome.runtime.sendMessage({
+      type: 'RESTORE_SETTINGS_BACKUP',
+      source: 'sidepanel',
+      payload: {},
+    });
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+    if (!response?.state) {
+      throw new Error('恢复后未返回最新配置状态。');
+    }
+
+    applySettingsState(response.state);
+    updateStatusDisplay(latestState);
+    const backedUpAt = response.backedUpAt ? `（${response.backedUpAt}）` : '';
+    showToast(`已恢复上次配置备份${backedUpAt}`, 'success', 2400);
+  } catch (err) {
+    showToast(`恢复配置备份失败：${err.message}`, 'error');
+  } finally {
+    configActionInFlight = false;
+    updateConfigMenuControls();
+  }
+}
+
 function syncPasswordToggleLabel() {
   syncToggleButtonLabel(btnTogglePassword, inputPassword, {
     show: '显示密码',
@@ -13403,6 +13494,13 @@ btnImportSettings?.addEventListener('click', async () => {
     inputImportSettingsFile.value = '';
     inputImportSettingsFile.click();
   }
+});
+
+btnRestoreSettingsBackup?.addEventListener('click', async () => {
+  if (configActionInFlight || settingsSaveInFlight) {
+    return;
+  }
+  await restoreSettingsBackup();
 });
 
 inputImportSettingsFile?.addEventListener('change', async () => {
@@ -14502,6 +14600,7 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
 
 inputAutoNetworkSwitchEnabled?.addEventListener('change', () => {
   markSettingsDirty(true);
+  updateAutoNetworkPanelVisibility(latestState);
   if (typeof updateIpProxyUI === 'function') {
     updateIpProxyUI(latestState);
   }
@@ -14590,18 +14689,17 @@ function applyDedicatedMihomoRuntimeResult(result = {}, status = '') {
     patch.autoNetworkMihomoCheckoutGroup = result.groupName;
   }
   syncLatestState(patch);
-  markSettingsDirty(true);
+  markSettingsDirty(false);
 }
 
 async function requestDedicatedMihomoHelper(type, successMessage) {
-  await saveSettings({ silent: true });
+  await persistCurrentSettingsForAction();
   const response = await chrome.runtime.sendMessage({ type, source: 'sidepanel' });
   if (response?.error) {
     throw new Error(response.error);
   }
   const result = response?.result || {};
   applyDedicatedMihomoRuntimeResult(result, result.running ? 'running' : 'stopped');
-  await saveSettings({ silent: true });
   if (successMessage) {
     showToast(successMessage, 'success');
   }
@@ -16299,6 +16397,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         if (message.payload.autoNetworkSwitchEnabled !== undefined && inputAutoNetworkSwitchEnabled) {
           inputAutoNetworkSwitchEnabled.checked = Boolean(message.payload.autoNetworkSwitchEnabled);
+          updateAutoNetworkPanelVisibility({
+            ...latestState,
+            autoNetworkSwitchEnabled: message.payload.autoNetworkSwitchEnabled,
+          });
         }
         if (message.payload.autoNetworkSignupProxyList !== undefined && inputAutoNetworkSignupProxyList) {
           inputAutoNetworkSignupProxyList.value = normalizeIpProxyAccountList(message.payload.autoNetworkSignupProxyList || '');
@@ -17092,6 +17194,7 @@ updateConfigMenuControls();
 setLocalCpaStep9Mode(DEFAULT_LOCAL_CPA_STEP9_MODE);
 setMail2925Mode(DEFAULT_MAIL_2925_MODE);
 setCloudflareTempEmailLookupMode(DEFAULT_CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE);
+updateAutoNetworkPanelVisibility();
 updatePanelModeUI();
 updateMailProviderUI();
 updateButtonStates();

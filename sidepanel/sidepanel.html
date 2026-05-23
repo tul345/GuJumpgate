@@ -75,6 +75,7 @@
         <div id="config-menu" class="header-dropdown" role="menu" aria-labelledby="btn-config-menu" hidden>
           <button id="btn-export-settings" class="header-dropdown-item" type="button" role="menuitem">导出配置</button>
           <button id="btn-import-settings" class="header-dropdown-item" type="button" role="menuitem">导入配置</button>
+          <button id="btn-restore-settings-backup" class="header-dropdown-item" type="button" role="menuitem">恢复上次备份</button>
         </div>
       </div>
     </div>
@@ -784,6 +785,7 @@
         <span class="data-label">Mihomo</span>
         <input type="checkbox" id="input-auto-network-mihomo-enabled" checked hidden />
       </div>
+      <div id="mihomo-network-body" class="mihomo-network-body" hidden>
       <div class="data-row">
         <span class="data-label">控制器</span>
         <input type="text" id="input-auto-network-mihomo-controller-url" class="data-input mono"
@@ -854,6 +856,14 @@
         <input type="text" id="input-auto-network-mihomo-exclude-keyword" class="data-input mono"
           placeholder="免费,Free,下载专用,x0.01,DIRECT,REJECT" />
       </div>
+      <div class="data-row">
+        <span class="data-label">尝试次数</span>
+        <div class="data-inline">
+          <input type="number" id="input-auto-network-switch-max-attempts" class="data-input"
+            min="1" max="12" step="1" placeholder="3" title="出口地区不匹配时，最多轮询多少条节点" />
+          <span class="data-unit">次校验</span>
+        </div>
+      </div>
       <div class="data-row mihomo-plan-row">
         <span class="data-label">本轮节点</span>
         <span id="display-auto-network-mihomo-plan" class="data-value mono truncate">未锁定</span>
@@ -868,6 +878,7 @@
           <button id="btn-auto-network-mihomo-switch-signup" class="btn btn-ghost btn-xs" type="button">切 JP</button>
           <button id="btn-auto-network-mihomo-switch-checkout" class="btn btn-ghost btn-xs" type="button">切 US</button>
         </div>
+      </div>
       </div>
     </div>
     <div id="cloudflare-temp-email-section" class="data-card hotmail-card" style="display:none;">
@@ -1451,11 +1462,6 @@
                       <div class="data-inline auto-network-import-actions">
                         <button id="btn-auto-network-checkout-import" class="btn btn-outline btn-xs" type="button">导入 US 池</button>
                         <button id="btn-auto-network-copy-main-to-checkout" class="btn btn-ghost btn-xs" type="button">复制主池</button>
-                      </div>
-                      <div class="data-inline">
-                        <input type="number" id="input-auto-network-switch-max-attempts" class="data-input"
-                          min="1" max="12" step="1" placeholder="3" title="出口地区不匹配时，最多轮询多少条节点" />
-                        <span class="data-unit">次校验</span>
                       </div>
                     </div>
                   </div>

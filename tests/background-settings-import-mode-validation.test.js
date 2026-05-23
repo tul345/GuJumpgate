@@ -48,6 +48,18 @@ function extractFunction(name) {
   return source.slice(start, end);
 }
 
+test('dedicated Mihomo imported port settings use the shared bounded integer normalizer', () => {
+  assert.doesNotMatch(source, /normalizeIntegerInRange/);
+  assert.match(
+    source,
+    /case 'dedicatedMihomoControllerPort':\s*return String\(normalizeBoundedIntegerSetting\(value, Number\(DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT\), 1, 65535\)\);/
+  );
+  assert.match(
+    source,
+    /case 'dedicatedMihomoMixedPort':\s*return String\(normalizeBoundedIntegerSetting\(value, Number\(DEFAULT_DEDICATED_MIHOMO_MIXED_PORT\), 1, 65535\)\);/
+  );
+});
+
 test('importSettingsBundle normalizes unsupported capability flags before persisting imported settings', async () => {
   const api = new Function(`
 const SETTINGS_EXPORT_SCHEMA_VERSION = 1;
