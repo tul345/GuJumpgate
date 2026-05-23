@@ -163,6 +163,12 @@ const inputAutoNetworkSwitchMaxAttempts = document.getElementById('input-auto-ne
 const inputAutoNetworkMihomoEnabled = document.getElementById('input-auto-network-mihomo-enabled');
 const inputAutoNetworkMihomoControllerUrl = document.getElementById('input-auto-network-mihomo-controller-url');
 const inputAutoNetworkMihomoSecret = document.getElementById('input-auto-network-mihomo-secret');
+const inputDedicatedMihomoHelperUrl = document.getElementById('input-dedicated-mihomo-helper-url');
+const inputDedicatedMihomoSubscriptionUrl = document.getElementById('input-dedicated-mihomo-subscription-url');
+const inputDedicatedMihomoBinaryPath = document.getElementById('input-dedicated-mihomo-binary-path');
+const inputDedicatedMihomoControllerPort = document.getElementById('input-dedicated-mihomo-controller-port');
+const inputDedicatedMihomoMixedPort = document.getElementById('input-dedicated-mihomo-mixed-port');
+const displayDedicatedMihomoStatus = document.getElementById('display-dedicated-mihomo-status');
 const inputAutoNetworkMihomoLocalProxyHost = document.getElementById('input-auto-network-mihomo-local-proxy-host');
 const inputAutoNetworkMihomoLocalProxyPort = document.getElementById('input-auto-network-mihomo-local-proxy-port');
 const inputAutoNetworkMihomoSignupGroup = document.getElementById('input-auto-network-mihomo-signup-group');
@@ -172,6 +178,8 @@ const inputAutoNetworkMihomoCheckoutKeyword = document.getElementById('input-aut
 const inputAutoNetworkMihomoExcludeKeyword = document.getElementById('input-auto-network-mihomo-exclude-keyword');
 const displayAutoNetworkMihomoPlan = document.getElementById('display-auto-network-mihomo-plan');
 const btnAutoNetworkMihomoTest = document.getElementById('btn-auto-network-mihomo-test');
+const btnDedicatedMihomoStart = document.getElementById('btn-dedicated-mihomo-start');
+const btnDedicatedMihomoStop = document.getElementById('btn-dedicated-mihomo-stop');
 const btnAutoNetworkMihomoPrepare = document.getElementById('btn-auto-network-mihomo-prepare');
 const btnAutoNetworkMihomoSwitchSignup = document.getElementById('btn-auto-network-mihomo-switch-signup');
 const btnAutoNetworkMihomoSwitchCheckout = document.getElementById('btn-auto-network-mihomo-switch-checkout');
@@ -2446,6 +2454,7 @@ function syncLatestState(nextState) {
 
   renderAccountRecords(latestState);
   renderMihomoPlanDisplay(latestState);
+  renderDedicatedMihomoStatus(latestState);
 }
 
 function renderMihomoPlanDisplay(state = latestState) {
@@ -2472,6 +2481,17 @@ function renderMihomoPlanDisplay(state = latestState) {
   const text = `${parts.join(' / ')}${createdText ? ` @ ${createdText}` : ''}`;
   displayAutoNetworkMihomoPlan.textContent = text;
   displayAutoNetworkMihomoPlan.title = text;
+}
+
+function renderDedicatedMihomoStatus(state = latestState) {
+  if (!displayDedicatedMihomoStatus) {
+    return;
+  }
+  const status = state?.dedicatedMihomoRuntimeStatus || '';
+  const detail = state?.dedicatedMihomoRuntimeDetail || '';
+  const text = detail || status || '未连接';
+  displayDedicatedMihomoStatus.textContent = text;
+  displayDedicatedMihomoStatus.title = text;
 }
 
 let accountRunHistoryRefreshTimer = null;
@@ -4182,6 +4202,15 @@ function collectSettingsPayload() {
     autoNetworkMihomoSignupKeyword: String(inputAutoNetworkMihomoSignupKeyword?.value || latestState?.autoNetworkMihomoSignupKeyword || '日本,JP,Japan').trim(),
     autoNetworkMihomoCheckoutKeyword: String(inputAutoNetworkMihomoCheckoutKeyword?.value || latestState?.autoNetworkMihomoCheckoutKeyword || '美国,US,USA,United States').trim(),
     autoNetworkMihomoExcludeKeyword: String(inputAutoNetworkMihomoExcludeKeyword?.value || latestState?.autoNetworkMihomoExcludeKeyword || '免费,Free,下载专用,x0.01,DIRECT,REJECT').trim(),
+    dedicatedMihomoHelperUrl: String(inputDedicatedMihomoHelperUrl?.value || latestState?.dedicatedMihomoHelperUrl || 'http://127.0.0.1:18768').trim(),
+    dedicatedMihomoSubscriptionUrl: String(inputDedicatedMihomoSubscriptionUrl?.value || latestState?.dedicatedMihomoSubscriptionUrl || '').trim(),
+    dedicatedMihomoBinaryPath: String(inputDedicatedMihomoBinaryPath?.value || latestState?.dedicatedMihomoBinaryPath || '').trim(),
+    dedicatedMihomoControllerPort: String(Math.max(1, Math.min(65535, Number.parseInt(String(
+      inputDedicatedMihomoControllerPort?.value || latestState?.dedicatedMihomoControllerPort || 9197
+    ).trim(), 10) || 9197))),
+    dedicatedMihomoMixedPort: String(Math.max(1, Math.min(65535, Number.parseInt(String(
+      inputDedicatedMihomoMixedPort?.value || latestState?.dedicatedMihomoMixedPort || 7898
+    ).trim(), 10) || 7898))),
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
     plusModeEnabled: fixedPlusModeEnabled,
@@ -9817,6 +9846,21 @@ function applySettingsState(state) {
   if (inputAutoNetworkMihomoExcludeKeyword) {
     inputAutoNetworkMihomoExcludeKeyword.value = String(state?.autoNetworkMihomoExcludeKeyword || '免费,Free,下载专用,x0.01,DIRECT,REJECT');
   }
+  if (inputDedicatedMihomoHelperUrl) {
+    inputDedicatedMihomoHelperUrl.value = String(state?.dedicatedMihomoHelperUrl || 'http://127.0.0.1:18768');
+  }
+  if (inputDedicatedMihomoSubscriptionUrl) {
+    inputDedicatedMihomoSubscriptionUrl.value = String(state?.dedicatedMihomoSubscriptionUrl || '');
+  }
+  if (inputDedicatedMihomoBinaryPath) {
+    inputDedicatedMihomoBinaryPath.value = String(state?.dedicatedMihomoBinaryPath || '');
+  }
+  if (inputDedicatedMihomoControllerPort) {
+    inputDedicatedMihomoControllerPort.value = String(state?.dedicatedMihomoControllerPort || '9197');
+  }
+  if (inputDedicatedMihomoMixedPort) {
+    inputDedicatedMihomoMixedPort.value = String(state?.dedicatedMihomoMixedPort || '7898');
+  }
   if (typeof setIpProxyMode === 'function') {
     setIpProxyMode(activeIpProxyProfile.mode);
   }
@@ -14443,6 +14487,9 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   inputAutoNetworkMihomoCheckoutGroup,
   inputAutoNetworkMihomoCheckoutKeyword,
   inputAutoNetworkMihomoExcludeKeyword,
+  inputDedicatedMihomoHelperUrl,
+  inputDedicatedMihomoSubscriptionUrl,
+  inputDedicatedMihomoBinaryPath,
 ].forEach((input) => {
   input?.addEventListener('input', () => {
     markSettingsDirty(true);
@@ -14489,6 +14536,19 @@ inputAutoNetworkMihomoLocalProxyPort?.addEventListener('blur', () => {
   saveSettings({ silent: true }).catch(() => {});
 });
 
+[inputDedicatedMihomoControllerPort, inputDedicatedMihomoMixedPort].forEach((input, index) => {
+  input?.addEventListener('input', () => {
+    markSettingsDirty(true);
+    scheduleSettingsAutoSave();
+  });
+  input?.addEventListener('blur', () => {
+    const fallback = index === 0 ? 9197 : 7898;
+    const port = Number.parseInt(String(input.value || '').trim(), 10);
+    input.value = String(Math.max(1, Math.min(65535, Number.isFinite(port) ? port : fallback)));
+    saveSettings({ silent: true }).catch(() => {});
+  });
+});
+
 async function testMihomoControllerFromPanel() {
   await saveSettings({ silent: true });
   const response = await chrome.runtime.sendMessage({ type: 'TEST_MIHOMO_CONTROLLER', source: 'sidepanel' });
@@ -14498,6 +14558,54 @@ async function testMihomoControllerFromPanel() {
   const groups = Array.isArray(response?.groups) ? response.groups : [];
   const preview = groups.slice(0, 3).map((group) => `${group.name}(${group.count})`).join(' / ');
   showToast(`Clash 已连接：${groups.length} 个分组，${response?.nodeCount || 0} 个节点${preview ? `；${preview}` : ''}`, 'success');
+}
+
+function applyDedicatedMihomoRuntimeResult(result = {}, status = '') {
+  const patch = {
+    dedicatedMihomoRuntimeStatus: status || (result.running ? 'running' : 'stopped'),
+    dedicatedMihomoRuntimeDetail: result.running
+      ? `运行中 ${result.controllerUrl || ''} / ${result.localProxyHost || '127.0.0.1'}:${result.mixedPort || ''}`.trim()
+      : '已停止',
+  };
+  if (result.controllerUrl && inputAutoNetworkMihomoControllerUrl) {
+    inputAutoNetworkMihomoControllerUrl.value = result.controllerUrl;
+    patch.autoNetworkMihomoControllerUrl = result.controllerUrl;
+  }
+  if (result.localProxyHost && inputAutoNetworkMihomoLocalProxyHost) {
+    inputAutoNetworkMihomoLocalProxyHost.value = result.localProxyHost;
+    patch.autoNetworkMihomoLocalProxyHost = result.localProxyHost;
+  }
+  if (result.mixedPort && inputAutoNetworkMihomoLocalProxyPort) {
+    inputAutoNetworkMihomoLocalProxyPort.value = String(result.mixedPort);
+    patch.autoNetworkMihomoLocalProxyPort = String(result.mixedPort);
+  }
+  if (result.secret && inputAutoNetworkMihomoSecret) {
+    inputAutoNetworkMihomoSecret.value = result.secret;
+    patch.autoNetworkMihomoSecret = result.secret;
+  }
+  if (result.groupName) {
+    if (inputAutoNetworkMihomoSignupGroup) inputAutoNetworkMihomoSignupGroup.value = result.groupName;
+    if (inputAutoNetworkMihomoCheckoutGroup) inputAutoNetworkMihomoCheckoutGroup.value = result.groupName;
+    patch.autoNetworkMihomoSignupGroup = result.groupName;
+    patch.autoNetworkMihomoCheckoutGroup = result.groupName;
+  }
+  syncLatestState(patch);
+  markSettingsDirty(true);
+}
+
+async function requestDedicatedMihomoHelper(type, successMessage) {
+  await saveSettings({ silent: true });
+  const response = await chrome.runtime.sendMessage({ type, source: 'sidepanel' });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  const result = response?.result || {};
+  applyDedicatedMihomoRuntimeResult(result, result.running ? 'running' : 'stopped');
+  await saveSettings({ silent: true });
+  if (successMessage) {
+    showToast(successMessage, 'success');
+  }
+  return result;
 }
 
 async function prepareMihomoPlanFromPanel() {
@@ -14611,6 +14719,18 @@ btnAutoNetworkCopyMainToCheckout?.addEventListener('click', () => {
 btnAutoNetworkMihomoTest?.addEventListener('click', () => {
   testMihomoControllerFromPanel().catch((error) => {
     showToast(error?.message || 'Clash controller test failed.', 'error');
+  });
+});
+
+btnDedicatedMihomoStart?.addEventListener('click', () => {
+  requestDedicatedMihomoHelper('START_DEDICATED_MIHOMO_HELPER', '专用 Mihomo 已启动').catch((error) => {
+    showToast(error?.message || 'Dedicated Mihomo start failed.', 'error');
+  });
+});
+
+btnDedicatedMihomoStop?.addEventListener('click', () => {
+  requestDedicatedMihomoHelper('STOP_DEDICATED_MIHOMO_HELPER', '专用 Mihomo 已停止').catch((error) => {
+    showToast(error?.message || 'Dedicated Mihomo stop failed.', 'error');
   });
 });
 
@@ -16115,6 +16235,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         || message.payload.autoNetworkMihomoPlannedCheckoutGroup !== undefined
         || message.payload.autoNetworkMihomoPlannedCheckoutNode !== undefined
         || message.payload.autoNetworkMihomoPlannedCheckoutStatus !== undefined
+        || message.payload.dedicatedMihomoHelperUrl !== undefined
+        || message.payload.dedicatedMihomoSubscriptionUrl !== undefined
+        || message.payload.dedicatedMihomoBinaryPath !== undefined
+        || message.payload.dedicatedMihomoControllerPort !== undefined
+        || message.payload.dedicatedMihomoMixedPort !== undefined
         || message.payload.autoNetworkActiveProfile !== undefined
         || message.payload.autoNetworkActiveExpectedRegion !== undefined
       ) {
@@ -16214,6 +16339,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         if (message.payload.autoNetworkMihomoExcludeKeyword !== undefined && inputAutoNetworkMihomoExcludeKeyword) {
           inputAutoNetworkMihomoExcludeKeyword.value = String(message.payload.autoNetworkMihomoExcludeKeyword || '');
+        }
+        if (message.payload.dedicatedMihomoHelperUrl !== undefined && inputDedicatedMihomoHelperUrl) {
+          inputDedicatedMihomoHelperUrl.value = String(message.payload.dedicatedMihomoHelperUrl || '');
+        }
+        if (message.payload.dedicatedMihomoSubscriptionUrl !== undefined && inputDedicatedMihomoSubscriptionUrl) {
+          inputDedicatedMihomoSubscriptionUrl.value = String(message.payload.dedicatedMihomoSubscriptionUrl || '');
+        }
+        if (message.payload.dedicatedMihomoBinaryPath !== undefined && inputDedicatedMihomoBinaryPath) {
+          inputDedicatedMihomoBinaryPath.value = String(message.payload.dedicatedMihomoBinaryPath || '');
+        }
+        if (message.payload.dedicatedMihomoControllerPort !== undefined && inputDedicatedMihomoControllerPort) {
+          inputDedicatedMihomoControllerPort.value = String(message.payload.dedicatedMihomoControllerPort || '');
+        }
+        if (message.payload.dedicatedMihomoMixedPort !== undefined && inputDedicatedMihomoMixedPort) {
+          inputDedicatedMihomoMixedPort.value = String(message.payload.dedicatedMihomoMixedPort || '');
         }
         if (hasIpProxyConfigPayload) {
           const activeProxyProfile = typeof getIpProxyServiceProfile === 'function'

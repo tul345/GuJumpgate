@@ -450,6 +450,10 @@ const DEFAULT_SUB2API_GROUP_NAMES = [
 ];
 const DEFAULT_SUB2API_REDIRECT_URI = 'http://localhost:1455/auth/callback';
 const DEFAULT_IP_PROXY_SERVICE = '711proxy';
+const DEFAULT_DEDICATED_MIHOMO_HELPER_URL = 'http://127.0.0.1:18768';
+const DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT = '9197';
+const DEFAULT_DEDICATED_MIHOMO_MIXED_PORT = '7898';
+const DEFAULT_DEDICATED_MIHOMO_WORK_DIR = '.runtime/dedicated-mihomo';
 const IP_PROXY_SERVICE_VALUES = ['711proxy', 'lumiproxy', 'iproyal', 'omegaproxy'];
 const IP_PROXY_ENABLED_SERVICE_VALUES = ['711proxy'];
 const DEFAULT_IP_PROXY_MODE = 'account';
@@ -938,6 +942,12 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoNetworkMihomoExcludeKeyword: DEFAULT_MIHOMO_EXCLUDE_KEYWORD,
   autoNetworkMihomoSignupCursor: 0,
   autoNetworkMihomoCheckoutCursor: 0,
+  dedicatedMihomoHelperUrl: DEFAULT_DEDICATED_MIHOMO_HELPER_URL,
+  dedicatedMihomoSubscriptionUrl: '',
+  dedicatedMihomoBinaryPath: '',
+  dedicatedMihomoWorkDir: DEFAULT_DEDICATED_MIHOMO_WORK_DIR,
+  dedicatedMihomoControllerPort: DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT,
+  dedicatedMihomoMixedPort: DEFAULT_DEDICATED_MIHOMO_MIXED_PORT,
   codex2apiUrl: DEFAULT_CODEX2API_URL,
   codex2apiAdminKey: '',
   customPassword: '',
@@ -2903,6 +2913,16 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeMihomoText(value || '', DEFAULT_MIHOMO_CHECKOUT_KEYWORD);
     case 'autoNetworkMihomoExcludeKeyword':
       return normalizeMihomoText(value || '', DEFAULT_MIHOMO_EXCLUDE_KEYWORD);
+    case 'dedicatedMihomoHelperUrl':
+      return normalizeLocalHttpBaseUrl(value || '', DEFAULT_DEDICATED_MIHOMO_HELPER_URL);
+    case 'dedicatedMihomoSubscriptionUrl':
+    case 'dedicatedMihomoBinaryPath':
+    case 'dedicatedMihomoWorkDir':
+      return String(value || '').trim();
+    case 'dedicatedMihomoControllerPort':
+      return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_CONTROLLER_PORT)));
+    case 'dedicatedMihomoMixedPort':
+      return String(normalizeIntegerInRange(value, 1, 65535, Number(DEFAULT_DEDICATED_MIHOMO_MIXED_PORT)));
     case 'ipProxyApiPool':
       return normalizeProxyPoolEntries(
         value,

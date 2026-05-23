@@ -1543,6 +1543,57 @@
           return await getMihomoControllerSummary(state);
         }
 
+        case 'DEDICATED_MIHOMO_HELPER_STATUS':
+        case 'START_DEDICATED_MIHOMO_HELPER':
+        case 'STOP_DEDICATED_MIHOMO_HELPER': {
+          const state = await getState();
+          const helperBaseUrl = String(state?.dedicatedMihomoHelperUrl || 'http://127.0.0.1:18768').trim().replace(/\/+$/g, '');
+          const helperPath = message.type === 'START_DEDICATED_MIHOMO_HELPER'
+            ? '/start'
+            : (message.type === 'STOP_DEDICATED_MIHOMO_HELPER' ? '/stop' : '/status');
+          const url = new URL(helperPath, `${helperBaseUrl}/`).toString();
+          const payload = message.type === 'START_DEDICATED_MIHOMO_HELPER'
+            ? {
+              subscriptionUrl: state?.dedicatedMihomoSubscriptionUrl || '',
+              mihomoPath: state?.dedicatedMihomoBinaryPath || '',
+              workDir: state?.dedicatedMihomoWorkDir || '.runtime/dedicated-mihomo',
+              controllerHost: '127.0.0.1',
+              controllerPort: state?.dedicatedMihomoControllerPort || '9197',
+              mixedPort: state?.dedicatedMihomoMixedPort || '7898',
+              secret: state?.autoNetworkMihomoSecret || 'gujumpgate-dedicated',
+              groupName: state?.autoNetworkMihomoSignupGroup || 'GLOBAL',
+            }
+            : {};
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const text = await response.text();
+          let result = {};
+          try {
+            result = JSON.parse(text || '{}');
+          } catch {
+            throw new Error(`Dedicated Mihomo helper returned non-JSON response: ${text.slice(0, 200)}`);
+          }
+          if (!response.ok || result?.ok === false) {
+            throw new Error(result?.error || `Dedicated Mihomo helper failed with ${response.status}`);
+          }
+          if (message.type === 'START_DEDICATED_MIHOMO_HELPER') {
+            const patch = {
+              autoNetworkMihomoControllerUrl: result.controllerUrl || `http://127.0.0.1:${state?.dedicatedMihomoControllerPort || '9197'}`,
+              autoNetworkMihomoLocalProxyHost: result.localProxyHost || '127.0.0.1',
+              autoNetworkMihomoLocalProxyPort: String(result.mixedPort || state?.dedicatedMihomoMixedPort || '7898'),
+              autoNetworkMihomoSecret: result.secret || state?.autoNetworkMihomoSecret || 'gujumpgate-dedicated',
+              autoNetworkMihomoSignupGroup: result.groupName || state?.autoNetworkMihomoSignupGroup || 'GLOBAL',
+              autoNetworkMihomoCheckoutGroup: result.groupName || state?.autoNetworkMihomoCheckoutGroup || 'GLOBAL',
+            };
+            await setState(patch);
+            broadcastDataUpdate(patch);
+          }
+          return { ok: true, result };
+        }
+
         case 'PREPARE_MIHOMO_PLAN_NOW': {
           if (typeof ensureAutoNetworkMihomoPlan !== 'function') {
             throw new Error('Mihomo/Clash auto switch is not loaded.');

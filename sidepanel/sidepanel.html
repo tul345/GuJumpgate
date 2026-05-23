@@ -794,6 +794,34 @@
         <input type="password" id="input-auto-network-mihomo-secret" class="data-input mono"
           placeholder="set-your-secret" />
       </div>
+      <div class="data-row module-divider-start">
+        <span class="data-label">专用Helper</span>
+        <input type="text" id="input-dedicated-mihomo-helper-url" class="data-input mono"
+          placeholder="http://127.0.0.1:18768" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">订阅链接</span>
+        <input type="password" id="input-dedicated-mihomo-subscription-url" class="data-input mono"
+          placeholder="https://example.com/api/v1/client/subscribe?token=..." />
+      </div>
+      <div class="data-row">
+        <span class="data-label">内核路径</span>
+        <input type="text" id="input-dedicated-mihomo-binary-path" class="data-input mono"
+          placeholder="可空；或填 mihomo.exe 完整路径" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">专用端口</span>
+        <div class="data-inline">
+          <input type="number" id="input-dedicated-mihomo-controller-port" class="data-input"
+            min="1" max="65535" step="1" placeholder="9197" />
+          <input type="number" id="input-dedicated-mihomo-mixed-port" class="data-input"
+            min="1" max="65535" step="1" placeholder="7898" />
+        </div>
+      </div>
+      <div class="data-row">
+        <span class="data-label">专用状态</span>
+        <span id="display-dedicated-mihomo-status" class="data-value mono truncate">未连接</span>
+      </div>
       <div class="data-row">
         <span class="data-label">本机代理</span>
         <div class="data-inline">
@@ -834,6 +862,8 @@
         <span class="data-label">操作</span>
         <div class="data-inline auto-network-import-actions">
           <button id="btn-auto-network-mihomo-test" class="btn btn-outline btn-xs" type="button">测试</button>
+          <button id="btn-dedicated-mihomo-start" class="btn btn-outline btn-xs" type="button">启动专用</button>
+          <button id="btn-dedicated-mihomo-stop" class="btn btn-ghost btn-xs" type="button">停止专用</button>
           <button id="btn-auto-network-mihomo-prepare" class="btn btn-outline btn-xs" type="button">预检</button>
           <button id="btn-auto-network-mihomo-switch-signup" class="btn btn-ghost btn-xs" type="button">切 JP</button>
           <button id="btn-auto-network-mihomo-switch-checkout" class="btn btn-ghost btn-xs" type="button">切 US</button>
