@@ -1543,14 +1543,45 @@
           return await getMihomoControllerSummary(state);
         }
 
+        case 'PREPARE_MIHOMO_PLAN_NOW': {
+          if (typeof ensureAutoNetworkMihomoPlan !== 'function') {
+            throw new Error('Mihomo/Clash auto switch is not loaded.');
+          }
+          const state = await getState();
+          const result = await ensureAutoNetworkMihomoPlan({
+            state,
+            nodeId: 'open-chatgpt',
+            switchToProfile: 'signup',
+          });
+          return { ok: true, result };
+        }
+
         case 'SWITCH_MIHOMO_PROFILE_NOW': {
           if (typeof ensureAutoNetworkMihomoProfile !== 'function') {
             throw new Error('Mihomo/Clash auto switch is not loaded.');
           }
           const profile = String(message.payload?.profile || '').trim();
-          const result = await ensureAutoNetworkMihomoProfile(profile, {
-            nodeId: profile === 'checkout' ? 'plus-checkout-create' : 'open-chatgpt',
-          });
+          const state = await getState();
+          const plannedNodeKey = profile === 'checkout'
+            ? 'autoNetworkMihomoPlannedCheckoutNode'
+            : 'autoNetworkMihomoPlannedSignupNode';
+          const plannedGroupKey = profile === 'checkout'
+            ? 'autoNetworkMihomoPlannedCheckoutGroup'
+            : 'autoNetworkMihomoPlannedSignupGroup';
+          const fixedNode = String(state?.[plannedNodeKey] || '').trim();
+          const fixedGroup = String(state?.[plannedGroupKey] || '').trim();
+          const result = fixedNode && fixedGroup
+            ? await ensureAutoNetworkMihomoProfile(profile, {
+              state,
+              nodeId: profile === 'checkout' ? 'plus-checkout-create' : 'open-chatgpt',
+              fixedGroup,
+              fixedNode,
+              skipCursorAdvance: true,
+            })
+            : await ensureAutoNetworkMihomoProfile(profile, {
+              state,
+              nodeId: profile === 'checkout' ? 'plus-checkout-create' : 'open-chatgpt',
+            });
           return { ok: true, result };
         }
 

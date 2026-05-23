@@ -1434,7 +1434,9 @@ function updateIpProxyUI(state = latestState) {
     typeof inputAutoNetworkMihomoSignupKeyword !== 'undefined' ? inputAutoNetworkMihomoSignupKeyword : null,
     typeof inputAutoNetworkMihomoCheckoutGroup !== 'undefined' ? inputAutoNetworkMihomoCheckoutGroup : null,
     typeof inputAutoNetworkMihomoCheckoutKeyword !== 'undefined' ? inputAutoNetworkMihomoCheckoutKeyword : null,
+    typeof inputAutoNetworkMihomoExcludeKeyword !== 'undefined' ? inputAutoNetworkMihomoExcludeKeyword : null,
     typeof btnAutoNetworkMihomoTest !== 'undefined' ? btnAutoNetworkMihomoTest : null,
+    typeof btnAutoNetworkMihomoPrepare !== 'undefined' ? btnAutoNetworkMihomoPrepare : null,
     typeof btnAutoNetworkMihomoSwitchSignup !== 'undefined' ? btnAutoNetworkMihomoSwitchSignup : null,
     typeof btnAutoNetworkMihomoSwitchCheckout !== 'undefined' ? btnAutoNetworkMihomoSwitchCheckout : null,
   ].forEach((control) => {

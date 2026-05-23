@@ -935,6 +935,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   autoNetworkMihomoCheckoutGroup: DEFAULT_MIHOMO_GROUP_NAME,
   autoNetworkMihomoSignupKeyword: DEFAULT_MIHOMO_SIGNUP_KEYWORD,
   autoNetworkMihomoCheckoutKeyword: DEFAULT_MIHOMO_CHECKOUT_KEYWORD,
+  autoNetworkMihomoExcludeKeyword: DEFAULT_MIHOMO_EXCLUDE_KEYWORD,
   autoNetworkMihomoSignupCursor: 0,
   autoNetworkMihomoCheckoutCursor: 0,
   codex2apiUrl: DEFAULT_CODEX2API_URL,
@@ -2900,6 +2901,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeMihomoText(value || '', DEFAULT_MIHOMO_SIGNUP_KEYWORD);
     case 'autoNetworkMihomoCheckoutKeyword':
       return normalizeMihomoText(value || '', DEFAULT_MIHOMO_CHECKOUT_KEYWORD);
+    case 'autoNetworkMihomoExcludeKeyword':
+      return normalizeMihomoText(value || '', DEFAULT_MIHOMO_EXCLUDE_KEYWORD);
     case 'ipProxyApiPool':
       return normalizeProxyPoolEntries(
         value,
@@ -11871,26 +11874,34 @@ async function ensureAutoNetworkMihomoProfile(profile = '', options = {}) {
   const initialState = options.state || await getState();
   const expectedRegion = config.expectedRegion;
   const proxies = await fetchMihomoProxies(initialState);
-  const groupName = normalizeMihomoText(initialState?.[config.mihomoGroupKey], DEFAULT_MIHOMO_GROUP_NAME);
+  const fixedNode = String(options.fixedNode || '').trim();
+  const fixedGroup = String(options.fixedGroup || '').trim();
+  const groupName = fixedGroup || normalizeMihomoText(initialState?.[config.mihomoGroupKey], DEFAULT_MIHOMO_GROUP_NAME);
   const group = resolveMihomoGroup(proxies, groupName);
   if (!group) {
     throw new Error('Mihomo/Clash controller found no selectable proxy group. Please check external-controller and group name.');
   }
-  const candidates = getMihomoGroupCandidates(proxies, group, {
-    expectedRegion,
-    keyword: initialState?.[config.mihomoKeywordKey],
-  });
+  const candidates = fixedNode
+    ? [fixedNode]
+    : getMihomoGroupCandidates(proxies, group, {
+      expectedRegion,
+      keyword: initialState?.[config.mihomoKeywordKey],
+      excludeKeyword: initialState?.autoNetworkMihomoExcludeKeyword,
+    });
   if (!candidates.length) {
     throw new Error(`Mihomo/Clash group "${group.name}" has no ${expectedRegion} nodes matching keyword "${initialState?.[config.mihomoKeywordKey] || ''}".`);
   }
 
-  const maxAttempts = Math.min(
-    candidates.length,
-    Math.max(1, Number(initialState.autoNetworkSwitchMaxAttempts) || 3)
-  );
-  let cursor = normalizeIpProxyCurrentIndex(initialState?.[config.mihomoCursorKey], 0);
+  const maxAttempts = fixedNode
+    ? 1
+    : Math.min(
+      candidates.length,
+      Math.max(1, Number(initialState.autoNetworkSwitchMaxAttempts) || 3)
+    );
+  let cursor = fixedNode ? 0 : normalizeIpProxyCurrentIndex(initialState?.[config.mihomoCursorKey], 0);
   let lastStatus = null;
   let lastNodeName = '';
+  let lastError = null;
   await addLog(`Auto network: switching ${config.label} through Mihomo group "${group.name}" (${candidates.length} candidates, expect ${expectedRegion}).`, 'info', { nodeId: options.nodeId || '' });
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -11899,65 +11910,130 @@ async function ensureAutoNetworkMihomoProfile(profile = '', options = {}) {
     const index = cursor % candidates.length;
     const nodeName = candidates[index];
     lastNodeName = nodeName;
-    await switchMihomoProxyGroup(latestState, group.name, nodeName);
+    try {
+      await switchMihomoProxyGroup(latestState, group.name, nodeName);
 
-    const localPort = normalizeMihomoLocalProxyPort(latestState?.autoNetworkMihomoLocalProxyPort);
-    const updates = {
-      ipProxyEnabled: true,
-      ipProxyMode: 'account',
-      ipProxyAccountList: '',
-      ipProxyHost: normalizeMihomoLocalProxyHost(latestState?.autoNetworkMihomoLocalProxyHost),
-      ipProxyPort: localPort,
-      ipProxyProtocol: 'http',
-      ipProxyUsername: '',
-      ipProxyPassword: '',
-      ipProxyRegion: expectedRegion,
-      autoNetworkActiveProfile: normalizedProfile,
-      autoNetworkActiveExpectedRegion: expectedRegion,
-      autoNetworkMihomoActiveGroup: group.name,
-      autoNetworkMihomoActiveNode: nodeName,
-    };
-    await setState(updates);
-    broadcastDataUpdate(updates);
-
-    const applyState = { ...latestState, ...updates };
-    await applyIpProxySettingsFromState(applyState, {
-      skipExitProbe: true,
-      resetNetworkState: true,
-      forceAuthRebind: true,
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    const probeResult = await probeIpProxyExit({
-      state: applyState,
-      timeoutMs: 12000,
-      autoRotateMaxAttempts: 0,
-      authRebindMaxAttempts: 1,
-    });
-    lastStatus = probeResult?.proxyRouting || null;
-    if (isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
-      const nextCursor = (index + 1) % candidates.length;
-      const cursorPatch = { [config.mihomoCursorKey]: nextCursor };
-      await setState(cursorPatch);
-      broadcastDataUpdate(cursorPatch);
-      await addLog(`Auto network: Mihomo ${config.label} switched to "${nodeName}", exit check passed (${describeIpProxyExitStatus(lastStatus)}).`, 'ok', { nodeId: options.nodeId || '' });
-      return {
-        skipped: false,
-        provider: 'mihomo',
-        profile: normalizedProfile,
-        expectedRegion,
-        group: group.name,
-        node: nodeName,
-        index,
-        count: candidates.length,
-        status: lastStatus,
+      const localPort = normalizeMihomoLocalProxyPort(latestState?.autoNetworkMihomoLocalProxyPort);
+      const updates = {
+        ipProxyEnabled: true,
+        ipProxyMode: 'account',
+        ipProxyAccountList: '',
+        ipProxyHost: normalizeMihomoLocalProxyHost(latestState?.autoNetworkMihomoLocalProxyHost),
+        ipProxyPort: localPort,
+        ipProxyProtocol: 'http',
+        ipProxyUsername: '',
+        ipProxyPassword: '',
+        ipProxyRegion: expectedRegion,
+        autoNetworkActiveProfile: normalizedProfile,
+        autoNetworkActiveExpectedRegion: expectedRegion,
+        autoNetworkMihomoActiveGroup: group.name,
+        autoNetworkMihomoActiveNode: nodeName,
       };
-    }
+      await setState(updates);
+      broadcastDataUpdate(updates);
 
-    await addLog(`Auto network: Mihomo node "${nodeName}" did not match ${expectedRegion}; rotating (${attempt}/${maxAttempts}, ${describeIpProxyExitStatus(lastStatus)}).`, 'warn', { nodeId: options.nodeId || '' });
+      const applyState = { ...latestState, ...updates };
+      await applyIpProxySettingsFromState(applyState, {
+        skipExitProbe: true,
+        resetNetworkState: true,
+        forceAuthRebind: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      const probeResult = await probeIpProxyExit({
+        state: applyState,
+        timeoutMs: 12000,
+        autoRotateMaxAttempts: 0,
+        authRebindMaxAttempts: 1,
+      });
+      lastStatus = probeResult?.proxyRouting || null;
+      if (isIpProxyExitRegionMatch(lastStatus, expectedRegion)) {
+        if (!fixedNode && !options.skipCursorAdvance) {
+          const nextCursor = (index + 1) % candidates.length;
+          const cursorPatch = { [config.mihomoCursorKey]: nextCursor };
+          await setState(cursorPatch);
+          broadcastDataUpdate(cursorPatch);
+        }
+        await addLog(`Auto network: Mihomo ${config.label} switched to "${nodeName}", exit check passed (${describeIpProxyExitStatus(lastStatus)}).`, 'ok', { nodeId: options.nodeId || '' });
+        return {
+          skipped: false,
+          provider: 'mihomo',
+          profile: normalizedProfile,
+          expectedRegion,
+          group: group.name,
+          node: nodeName,
+          index,
+          count: candidates.length,
+          status: lastStatus,
+        };
+      }
+
+      await addLog(`Auto network: Mihomo node "${nodeName}" did not match ${expectedRegion}; rotating (${attempt}/${maxAttempts}, ${describeIpProxyExitStatus(lastStatus)}).`, 'warn', { nodeId: options.nodeId || '' });
+    } catch (error) {
+      lastError = error;
+      await addLog(`Auto network: Mihomo node "${nodeName}" failed or timed out; rotating (${attempt}/${maxAttempts}): ${error?.message || error}`, 'warn', { nodeId: options.nodeId || '' });
+    }
     cursor = (index + 1) % candidates.length;
   }
 
-  throw new Error(`Auto network: Mihomo ${config.label} failed to get ${expectedRegion} exit after ${maxAttempts} attempts. Last node: ${lastNodeName}; last status: ${describeIpProxyExitStatus(lastStatus)}.`);
+  throw new Error(`Auto network: Mihomo ${config.label} failed to get ${expectedRegion} exit after ${maxAttempts} attempts. Last node: ${lastNodeName}; last status: ${describeIpProxyExitStatus(lastStatus)}${lastError ? `; last error: ${lastError?.message || lastError}` : ''}.`);
+}
+
+async function ensureAutoNetworkMihomoPlan(options = {}) {
+  const initialState = options.state || await getState();
+  await addLog('Auto network: preflight testing JP and US Mihomo nodes before registration starts.', 'info', { nodeId: options.nodeId || '' });
+  const signupResult = await ensureAutoNetworkMihomoProfile(AUTO_NETWORK_SIGNUP_PROFILE, {
+    ...options,
+    state: initialState,
+    nodeId: 'open-chatgpt',
+  });
+  const checkoutResult = await ensureAutoNetworkMihomoProfile(AUTO_NETWORK_CHECKOUT_PROFILE, {
+    ...options,
+    state: await getState(),
+    nodeId: 'plus-checkout-create',
+  });
+  const planPatch = {
+    autoNetworkMihomoPlanCreatedAt: Date.now(),
+    autoNetworkMihomoPlannedSignupGroup: signupResult.group || '',
+    autoNetworkMihomoPlannedSignupNode: signupResult.node || '',
+    autoNetworkMihomoPlannedSignupStatus: describeIpProxyExitStatus(signupResult.status || {}),
+    autoNetworkMihomoPlannedCheckoutGroup: checkoutResult.group || '',
+    autoNetworkMihomoPlannedCheckoutNode: checkoutResult.node || '',
+    autoNetworkMihomoPlannedCheckoutStatus: describeIpProxyExitStatus(checkoutResult.status || {}),
+  };
+  await setState(planPatch);
+  broadcastDataUpdate(planPatch);
+  await addLog(
+    `Auto network: locked nodes for this run. JP="${signupResult.node}" (${planPatch.autoNetworkMihomoPlannedSignupStatus}); US="${checkoutResult.node}" (${planPatch.autoNetworkMihomoPlannedCheckoutStatus}).`,
+    'ok',
+    { nodeId: options.nodeId || '' }
+  );
+
+  const switchToProfile = normalizeAutoNetworkProfile(options.switchToProfile || AUTO_NETWORK_SIGNUP_PROFILE);
+  const targetResult = switchToProfile === AUTO_NETWORK_CHECKOUT_PROFILE ? checkoutResult : signupResult;
+  const targetSwitchResult = await ensureAutoNetworkMihomoProfile(switchToProfile, {
+    ...options,
+    state: await getState(),
+    nodeId: switchToProfile === AUTO_NETWORK_CHECKOUT_PROFILE ? 'plus-checkout-create' : 'open-chatgpt',
+    fixedGroup: targetResult.group,
+    fixedNode: targetResult.node,
+    skipCursorAdvance: true,
+  });
+  return {
+    ...targetSwitchResult,
+    planCreatedAt: planPatch.autoNetworkMihomoPlanCreatedAt,
+    signup: {
+      group: signupResult.group || '',
+      node: signupResult.node || '',
+      status: signupResult.status || null,
+      statusText: planPatch.autoNetworkMihomoPlannedSignupStatus,
+    },
+    checkout: {
+      group: checkoutResult.group || '',
+      node: checkoutResult.node || '',
+      status: checkoutResult.status || null,
+      statusText: planPatch.autoNetworkMihomoPlannedCheckoutStatus,
+    },
+  };
 }
 
 async function ensureAutoNetworkProfileForNode(nodeId = '', options = {}) {
@@ -11974,10 +12050,31 @@ async function ensureAutoNetworkProfileForNode(nodeId = '', options = {}) {
     return { skipped: true, reason: 'disabled' };
   }
   if (initialState?.autoNetworkMihomoEnabled) {
-    return ensureAutoNetworkMihomoProfile(profile, {
+    if (profile === AUTO_NETWORK_SIGNUP_PROFILE) {
+      return ensureAutoNetworkMihomoPlan({
+        ...options,
+        state: initialState,
+        nodeId: normalizedNodeId,
+        switchToProfile: AUTO_NETWORK_SIGNUP_PROFILE,
+      });
+    }
+    const plannedCheckoutNode = String(initialState?.autoNetworkMihomoPlannedCheckoutNode || '').trim();
+    const plannedCheckoutGroup = String(initialState?.autoNetworkMihomoPlannedCheckoutGroup || '').trim();
+    if (plannedCheckoutNode && plannedCheckoutGroup) {
+      return ensureAutoNetworkMihomoProfile(profile, {
+        ...options,
+        state: initialState,
+        nodeId: normalizedNodeId,
+        fixedGroup: plannedCheckoutGroup,
+        fixedNode: plannedCheckoutNode,
+        skipCursorAdvance: true,
+      });
+    }
+    return ensureAutoNetworkMihomoPlan({
       ...options,
       state: initialState,
       nodeId: normalizedNodeId,
+      switchToProfile: AUTO_NETWORK_CHECKOUT_PROFILE,
     });
   }
   if (!initialState?.ipProxyEnabled) {

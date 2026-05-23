@@ -169,7 +169,10 @@ const inputAutoNetworkMihomoSignupGroup = document.getElementById('input-auto-ne
 const inputAutoNetworkMihomoSignupKeyword = document.getElementById('input-auto-network-mihomo-signup-keyword');
 const inputAutoNetworkMihomoCheckoutGroup = document.getElementById('input-auto-network-mihomo-checkout-group');
 const inputAutoNetworkMihomoCheckoutKeyword = document.getElementById('input-auto-network-mihomo-checkout-keyword');
+const inputAutoNetworkMihomoExcludeKeyword = document.getElementById('input-auto-network-mihomo-exclude-keyword');
+const displayAutoNetworkMihomoPlan = document.getElementById('display-auto-network-mihomo-plan');
 const btnAutoNetworkMihomoTest = document.getElementById('btn-auto-network-mihomo-test');
+const btnAutoNetworkMihomoPrepare = document.getElementById('btn-auto-network-mihomo-prepare');
 const btnAutoNetworkMihomoSwitchSignup = document.getElementById('btn-auto-network-mihomo-switch-signup');
 const btnAutoNetworkMihomoSwitchCheckout = document.getElementById('btn-auto-network-mihomo-switch-checkout');
 const btnAutoNetworkSignupImport = document.getElementById('btn-auto-network-signup-import');
@@ -2442,6 +2445,33 @@ function syncLatestState(nextState) {
   };
 
   renderAccountRecords(latestState);
+  renderMihomoPlanDisplay(latestState);
+}
+
+function renderMihomoPlanDisplay(state = latestState) {
+  if (!displayAutoNetworkMihomoPlan) {
+    return;
+  }
+  const signupNode = String(state?.autoNetworkMihomoPlannedSignupNode || '').trim();
+  const checkoutNode = String(state?.autoNetworkMihomoPlannedCheckoutNode || '').trim();
+  if (!signupNode && !checkoutNode) {
+    displayAutoNetworkMihomoPlan.textContent = '未锁定';
+    displayAutoNetworkMihomoPlan.title = '';
+    return;
+  }
+  const signupStatus = String(state?.autoNetworkMihomoPlannedSignupStatus || '').trim();
+  const checkoutStatus = String(state?.autoNetworkMihomoPlannedCheckoutStatus || '').trim();
+  const createdAt = Number(state?.autoNetworkMihomoPlanCreatedAt || 0);
+  const createdText = Number.isFinite(createdAt) && createdAt > 0
+    ? new Date(createdAt).toLocaleTimeString()
+    : '';
+  const parts = [
+    signupNode ? `JP ${signupNode}${signupStatus ? ` (${signupStatus})` : ''}` : '',
+    checkoutNode ? `US ${checkoutNode}${checkoutStatus ? ` (${checkoutStatus})` : ''}` : '',
+  ].filter(Boolean);
+  const text = `${parts.join(' / ')}${createdText ? ` @ ${createdText}` : ''}`;
+  displayAutoNetworkMihomoPlan.textContent = text;
+  displayAutoNetworkMihomoPlan.title = text;
 }
 
 let accountRunHistoryRefreshTimer = null;
@@ -4151,6 +4181,7 @@ function collectSettingsPayload() {
     autoNetworkMihomoCheckoutGroup: String(inputAutoNetworkMihomoCheckoutGroup?.value || latestState?.autoNetworkMihomoCheckoutGroup || 'GLOBAL').trim(),
     autoNetworkMihomoSignupKeyword: String(inputAutoNetworkMihomoSignupKeyword?.value || latestState?.autoNetworkMihomoSignupKeyword || '日本,JP,Japan').trim(),
     autoNetworkMihomoCheckoutKeyword: String(inputAutoNetworkMihomoCheckoutKeyword?.value || latestState?.autoNetworkMihomoCheckoutKeyword || '美国,US,USA,United States').trim(),
+    autoNetworkMihomoExcludeKeyword: String(inputAutoNetworkMihomoExcludeKeyword?.value || latestState?.autoNetworkMihomoExcludeKeyword || '免费,Free,下载专用,x0.01,DIRECT,REJECT').trim(),
     codex2apiUrl: inputCodex2ApiUrl.value.trim(),
     codex2apiAdminKey: inputCodex2ApiAdminKey.value.trim(),
     plusModeEnabled: fixedPlusModeEnabled,
@@ -9783,6 +9814,9 @@ function applySettingsState(state) {
   if (inputAutoNetworkMihomoCheckoutKeyword) {
     inputAutoNetworkMihomoCheckoutKeyword.value = String(state?.autoNetworkMihomoCheckoutKeyword || '美国,US,USA,United States');
   }
+  if (inputAutoNetworkMihomoExcludeKeyword) {
+    inputAutoNetworkMihomoExcludeKeyword.value = String(state?.autoNetworkMihomoExcludeKeyword || '免费,Free,下载专用,x0.01,DIRECT,REJECT');
+  }
   if (typeof setIpProxyMode === 'function') {
     setIpProxyMode(activeIpProxyProfile.mode);
   }
@@ -14408,6 +14442,7 @@ inputCodex2ApiAdminKey.addEventListener('blur', () => {
   inputAutoNetworkMihomoSignupKeyword,
   inputAutoNetworkMihomoCheckoutGroup,
   inputAutoNetworkMihomoCheckoutKeyword,
+  inputAutoNetworkMihomoExcludeKeyword,
 ].forEach((input) => {
   input?.addEventListener('input', () => {
     markSettingsDirty(true);
@@ -14463,6 +14498,25 @@ async function testMihomoControllerFromPanel() {
   const groups = Array.isArray(response?.groups) ? response.groups : [];
   const preview = groups.slice(0, 3).map((group) => `${group.name}(${group.count})`).join(' / ');
   showToast(`Clash 已连接：${groups.length} 个分组，${response?.nodeCount || 0} 个节点${preview ? `；${preview}` : ''}`, 'success');
+}
+
+async function prepareMihomoPlanFromPanel() {
+  await saveSettings({ silent: true });
+  const response = await chrome.runtime.sendMessage({ type: 'PREPARE_MIHOMO_PLAN_NOW', source: 'sidepanel' });
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+  const result = response?.result || {};
+  syncLatestState({
+    autoNetworkMihomoPlanCreatedAt: result.planCreatedAt || Date.now(),
+    autoNetworkMihomoPlannedSignupGroup: result.signup?.group || latestState?.autoNetworkMihomoPlannedSignupGroup || '',
+    autoNetworkMihomoPlannedSignupNode: result.signup?.node || latestState?.autoNetworkMihomoPlannedSignupNode || '',
+    autoNetworkMihomoPlannedSignupStatus: result.signup?.statusText || latestState?.autoNetworkMihomoPlannedSignupStatus || '',
+    autoNetworkMihomoPlannedCheckoutGroup: result.checkout?.group || latestState?.autoNetworkMihomoPlannedCheckoutGroup || '',
+    autoNetworkMihomoPlannedCheckoutNode: result.checkout?.node || latestState?.autoNetworkMihomoPlannedCheckoutNode || '',
+    autoNetworkMihomoPlannedCheckoutStatus: result.checkout?.statusText || latestState?.autoNetworkMihomoPlannedCheckoutStatus || '',
+  });
+  showToast('JP/US 节点已预检并锁定', 'success');
 }
 
 async function switchMihomoProfileFromPanel(profile) {
@@ -14557,6 +14611,12 @@ btnAutoNetworkCopyMainToCheckout?.addEventListener('click', () => {
 btnAutoNetworkMihomoTest?.addEventListener('click', () => {
   testMihomoControllerFromPanel().catch((error) => {
     showToast(error?.message || 'Clash controller test failed.', 'error');
+  });
+});
+
+btnAutoNetworkMihomoPrepare?.addEventListener('click', () => {
+  prepareMihomoPlanFromPanel().catch((error) => {
+    showToast(error?.message || 'Mihomo preflight failed.', 'error');
   });
 });
 
@@ -16043,10 +16103,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         || message.payload.autoNetworkMihomoCheckoutGroup !== undefined
         || message.payload.autoNetworkMihomoSignupKeyword !== undefined
         || message.payload.autoNetworkMihomoCheckoutKeyword !== undefined
+        || message.payload.autoNetworkMihomoExcludeKeyword !== undefined
         || message.payload.autoNetworkMihomoSignupCursor !== undefined
         || message.payload.autoNetworkMihomoCheckoutCursor !== undefined
         || message.payload.autoNetworkMihomoActiveGroup !== undefined
         || message.payload.autoNetworkMihomoActiveNode !== undefined
+        || message.payload.autoNetworkMihomoPlanCreatedAt !== undefined
+        || message.payload.autoNetworkMihomoPlannedSignupGroup !== undefined
+        || message.payload.autoNetworkMihomoPlannedSignupNode !== undefined
+        || message.payload.autoNetworkMihomoPlannedSignupStatus !== undefined
+        || message.payload.autoNetworkMihomoPlannedCheckoutGroup !== undefined
+        || message.payload.autoNetworkMihomoPlannedCheckoutNode !== undefined
+        || message.payload.autoNetworkMihomoPlannedCheckoutStatus !== undefined
         || message.payload.autoNetworkActiveProfile !== undefined
         || message.payload.autoNetworkActiveExpectedRegion !== undefined
       ) {
@@ -16143,6 +16211,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         if (message.payload.autoNetworkMihomoCheckoutKeyword !== undefined && inputAutoNetworkMihomoCheckoutKeyword) {
           inputAutoNetworkMihomoCheckoutKeyword.value = String(message.payload.autoNetworkMihomoCheckoutKeyword || '');
+        }
+        if (message.payload.autoNetworkMihomoExcludeKeyword !== undefined && inputAutoNetworkMihomoExcludeKeyword) {
+          inputAutoNetworkMihomoExcludeKeyword.value = String(message.payload.autoNetworkMihomoExcludeKeyword || '');
         }
         if (hasIpProxyConfigPayload) {
           const activeProxyProfile = typeof getIpProxyServiceProfile === 'function'

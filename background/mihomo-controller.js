@@ -3,6 +3,7 @@
 const DEFAULT_MIHOMO_CONTROLLER_URL = 'http://127.0.0.1:9097';
 const DEFAULT_MIHOMO_LOCAL_PROXY_HOST = '127.0.0.1';
 const DEFAULT_MIHOMO_LOCAL_PROXY_PORT = '7897';
+const DEFAULT_MIHOMO_EXCLUDE_KEYWORD = '\u514d\u8d39,Free,\u4e0b\u8f7d\u4e13\u7528,x0.01,DIRECT,REJECT';
 const DEFAULT_MIHOMO_GROUP_NAME = 'GLOBAL';
 const DEFAULT_MIHOMO_SIGNUP_KEYWORD = '日本,JP,Japan';
 const DEFAULT_MIHOMO_CHECKOUT_KEYWORD = '美国,US,USA,United States';
@@ -132,6 +133,19 @@ function splitMihomoKeywords(value = '') {
     .filter(Boolean);
 }
 
+function mihomoNodeMatchesExcludeKeywords(nodeName = '', excludeText = '') {
+  const name = String(nodeName || '').trim();
+  if (!name) {
+    return true;
+  }
+  const keywords = splitMihomoKeywords(excludeText || DEFAULT_MIHOMO_EXCLUDE_KEYWORD);
+  if (!keywords.length) {
+    return false;
+  }
+  const lowerName = name.toLowerCase();
+  return keywords.some((keyword) => lowerName.includes(keyword.toLowerCase()));
+}
+
 function getDefaultMihomoKeywords(expectedRegion = '') {
   const region = String(expectedRegion || '').trim().toUpperCase();
   if (region === 'JP') {
@@ -160,6 +174,7 @@ function mihomoNodeMatchesKeywords(nodeName = '', keywordText = '', expectedRegi
 function getMihomoGroupCandidates(proxies = {}, group = null, options = {}) {
   const expectedRegion = String(options.expectedRegion || '').trim().toUpperCase();
   const keywordText = String(options.keyword || '').trim();
+  const excludeText = String(options.excludeKeyword || DEFAULT_MIHOMO_EXCLUDE_KEYWORD).trim();
   const allNames = Array.isArray(group?.proxy?.all) ? group.proxy.all : [];
   return allNames
     .map((name) => String(name || '').trim())
@@ -170,6 +185,9 @@ function getMihomoGroupCandidates(proxies = {}, group = null, options = {}) {
         return false;
       }
       if (/^(direct|reject|reject-drop|pass)$/i.test(name)) {
+        return false;
+      }
+      if (mihomoNodeMatchesExcludeKeywords(name, excludeText)) {
         return false;
       }
       return mihomoNodeMatchesKeywords(name, keywordText, expectedRegion);
@@ -209,6 +227,7 @@ globalThis.DEFAULT_MIHOMO_LOCAL_PROXY_PORT = DEFAULT_MIHOMO_LOCAL_PROXY_PORT;
 globalThis.DEFAULT_MIHOMO_GROUP_NAME = DEFAULT_MIHOMO_GROUP_NAME;
 globalThis.DEFAULT_MIHOMO_SIGNUP_KEYWORD = DEFAULT_MIHOMO_SIGNUP_KEYWORD;
 globalThis.DEFAULT_MIHOMO_CHECKOUT_KEYWORD = DEFAULT_MIHOMO_CHECKOUT_KEYWORD;
+globalThis.DEFAULT_MIHOMO_EXCLUDE_KEYWORD = DEFAULT_MIHOMO_EXCLUDE_KEYWORD;
 globalThis.normalizeMihomoControllerUrl = normalizeMihomoControllerUrl;
 globalThis.normalizeMihomoText = normalizeMihomoText;
 globalThis.normalizeMihomoLocalProxyHost = normalizeMihomoLocalProxyHost;

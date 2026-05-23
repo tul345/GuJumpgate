@@ -817,6 +817,12 @@ header {
   justify-content: flex-start;
 }
 
+.mihomo-plan-row .data-value {
+  color: var(--text-strong);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 540px) {
   .mihomo-network-card .section-mini-header {
     align-items: stretch;
