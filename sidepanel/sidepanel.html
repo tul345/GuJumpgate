@@ -1343,8 +1343,16 @@
                       </label>
                       <textarea id="input-auto-network-signup-proxy-list" class="data-textarea mono"
                         placeholder="注册 JP 池：每行 host:port:user:pass"></textarea>
+                      <div class="data-inline auto-network-import-actions">
+                        <button id="btn-auto-network-signup-import" class="btn btn-outline btn-xs" type="button">导入 JP 池</button>
+                        <button id="btn-auto-network-copy-main-to-signup" class="btn btn-ghost btn-xs" type="button">复制主池</button>
+                      </div>
                       <textarea id="input-auto-network-checkout-proxy-list" class="data-textarea mono"
                         placeholder="支付 US 池：每行 host:port:user:pass"></textarea>
+                      <div class="data-inline auto-network-import-actions">
+                        <button id="btn-auto-network-checkout-import" class="btn btn-outline btn-xs" type="button">导入 US 池</button>
+                        <button id="btn-auto-network-copy-main-to-checkout" class="btn btn-ghost btn-xs" type="button">复制主池</button>
+                      </div>
                       <div class="data-inline">
                         <input type="number" id="input-auto-network-switch-max-attempts" class="data-input"
                           min="1" max="12" step="1" placeholder="3" title="出口地区不匹配时，最多轮询多少条节点" />
@@ -1910,6 +1918,8 @@
 
   <div id="toast-container"></div>
   <input id="input-import-settings-file" type="file" accept=".json,application/json" hidden />
+  <input id="input-auto-network-signup-import-file" type="file" accept=".txt,.csv,.list,.conf,.yaml,.yml,text/plain,text/yaml,application/x-yaml" hidden />
+  <input id="input-auto-network-checkout-import-file" type="file" accept=".txt,.csv,.list,.conf,.yaml,.yml,text/plain,text/yaml,application/x-yaml" hidden />
   <script src="../managed-alias-utils.js"></script>
   <script src="../mail2925-utils.js"></script>
   <script src="../paypal-utils.js"></script>

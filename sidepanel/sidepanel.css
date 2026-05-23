@@ -1297,6 +1297,11 @@ header {
   width: 100%;
 }
 
+.auto-network-import-actions {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
 .data-input-with-icon {
   padding-right: 38px;
 }

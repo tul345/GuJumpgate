@@ -160,6 +160,12 @@ const inputAutoNetworkSwitchEnabled = document.getElementById('input-auto-networ
 const inputAutoNetworkSignupProxyList = document.getElementById('input-auto-network-signup-proxy-list');
 const inputAutoNetworkCheckoutProxyList = document.getElementById('input-auto-network-checkout-proxy-list');
 const inputAutoNetworkSwitchMaxAttempts = document.getElementById('input-auto-network-switch-max-attempts');
+const btnAutoNetworkSignupImport = document.getElementById('btn-auto-network-signup-import');
+const btnAutoNetworkCheckoutImport = document.getElementById('btn-auto-network-checkout-import');
+const btnAutoNetworkCopyMainToSignup = document.getElementById('btn-auto-network-copy-main-to-signup');
+const btnAutoNetworkCopyMainToCheckout = document.getElementById('btn-auto-network-copy-main-to-checkout');
+const inputAutoNetworkSignupImportFile = document.getElementById('input-auto-network-signup-import-file');
+const inputAutoNetworkCheckoutImportFile = document.getElementById('input-auto-network-checkout-import-file');
 const rowIpProxyActions = document.getElementById('row-ip-proxy-actions');
 const ipProxyActionButtons = document.getElementById('ip-proxy-action-buttons');
 const ipProxyActionHint = document.getElementById('ip-proxy-action-hint');
@@ -14371,6 +14377,81 @@ inputAutoNetworkSwitchMaxAttempts?.addEventListener('blur', () => {
   const attempts = Number.parseInt(String(inputAutoNetworkSwitchMaxAttempts.value || '').trim(), 10);
   inputAutoNetworkSwitchMaxAttempts.value = String(Math.max(1, Math.min(12, Number.isFinite(attempts) ? attempts : 3)));
   saveSettings({ silent: true }).catch(() => {});
+});
+
+function normalizeAutoNetworkImportedProxyText(text = '') {
+  return normalizeIpProxyAccountList(String(text || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (/^(?:#|\/\/|;|proxy-groups?:|rules?:|proxies?:|mixed-port:|port:|socks-port:)/i.test(line)) {
+        return false;
+      }
+      return /^(?:https?|socks[45]?):\/\//i.test(line)
+        || /^[^:\s]+:\d{2,5}(?::[^\s:]+(?::[^\s]+)?)?$/i.test(line);
+    })
+    .join('\n'));
+}
+
+async function importAutoNetworkProxyFile(fileInput, targetInput, label = '节点池') {
+  const file = fileInput?.files?.[0] || null;
+  if (!file || !targetInput) {
+    return;
+  }
+  const text = await file.text();
+  const normalized = normalizeAutoNetworkImportedProxyText(text);
+  fileInput.value = '';
+  if (!normalized) {
+    showToast(`${label}导入失败：没有识别到可直接用于浏览器代理的 HTTP/SOCKS 节点。`, 'error');
+    return;
+  }
+  targetInput.value = normalized;
+  markSettingsDirty(true);
+  await saveSettings({ silent: true });
+  const count = normalized.split('\n').filter(Boolean).length;
+  showToast(`${label}已导入 ${count} 条节点`, 'success');
+}
+
+function copyMainIpProxyPoolToAutoNetwork(targetInput, label = '节点池') {
+  if (!targetInput) {
+    return;
+  }
+  const currentList = normalizeIpProxyAccountList(inputIpProxyAccountList?.value || latestState?.ipProxyAccountList || '');
+  if (!currentList) {
+    showToast('主代理池为空，无法复制。', 'error');
+    return;
+  }
+  targetInput.value = currentList;
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).then(() => {
+    const count = currentList.split('\n').filter(Boolean).length;
+    showToast(`${label}已复制主池 ${count} 条节点`, 'success');
+  }).catch(() => {});
+}
+
+btnAutoNetworkSignupImport?.addEventListener('click', () => {
+  inputAutoNetworkSignupImportFile?.click();
+});
+btnAutoNetworkCheckoutImport?.addEventListener('click', () => {
+  inputAutoNetworkCheckoutImportFile?.click();
+});
+inputAutoNetworkSignupImportFile?.addEventListener('change', () => {
+  importAutoNetworkProxyFile(inputAutoNetworkSignupImportFile, inputAutoNetworkSignupProxyList, 'JP 池').catch((error) => {
+    showToast(error?.message || 'JP 池导入失败。', 'error');
+  });
+});
+inputAutoNetworkCheckoutImportFile?.addEventListener('change', () => {
+  importAutoNetworkProxyFile(inputAutoNetworkCheckoutImportFile, inputAutoNetworkCheckoutProxyList, 'US 池').catch((error) => {
+    showToast(error?.message || 'US 池导入失败。', 'error');
+  });
+});
+btnAutoNetworkCopyMainToSignup?.addEventListener('click', () => {
+  copyMainIpProxyPoolToAutoNetwork(inputAutoNetworkSignupProxyList, 'JP 池');
+});
+btnAutoNetworkCopyMainToCheckout?.addEventListener('click', () => {
+  copyMainIpProxyPoolToAutoNetwork(inputAutoNetworkCheckoutProxyList, 'US 池');
 });
 
 inputIpProxyUsername?.addEventListener('paste', () => {
