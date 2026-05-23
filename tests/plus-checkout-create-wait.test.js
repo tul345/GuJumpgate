@@ -614,6 +614,7 @@ test('hosted checkout PayPal verification refetches fresh code without resend', 
             hostedCheckoutVerificationUrl: 'https://relay.example/latest',
             hostedCheckoutPhoneNumber: '4642610989',
             hostedCheckoutVerificationPopupDelaySeconds: 6,
+            hostedCheckoutVerificationResendMaxAttempts: 0,
           }),
         },
       },
@@ -725,7 +726,7 @@ test('hosted checkout PayPal verification refetches fresh code without resend', 
   assert.equal(events.some((event) => event.type === 'complete' && event.step === 'plus-checkout-create'), true);
 });
 
-test('hosted checkout PayPal verification allows one resend after three rejected codes', async () => {
+test('hosted checkout PayPal verification resends immediately after the first rejected code', async () => {
   const events = [];
   let verificationSubmitCount = 0;
   let resendCount = 0;
@@ -741,6 +742,9 @@ test('hosted checkout PayPal verification allows one resend after three rejected
             hostedCheckoutVerificationUrl: 'https://relay.example/latest',
             hostedCheckoutPhoneNumber: '4642610989',
             hostedCheckoutVerificationPopupDelaySeconds: 0,
+            hostedCheckoutVerificationPollBeforeResend: 1,
+            hostedCheckoutVerificationResendMaxAttempts: 1,
+            hostedCheckoutVerificationAfterResendWaitSeconds: 0,
           }),
         },
       },
@@ -843,7 +847,8 @@ test('hosted checkout PayPal verification allows one resend after three rejected
     events.filter((event) => event.type === 'submit-code').map((event) => event.code),
     ['111111', '222222', '333333', '444444']
   );
-  assert.equal(events.findIndex((event) => event.type === 'resend') > events.findIndex((event) => event.type === 'submit-code' && event.code === '333333'), true);
+  assert.equal(events.findIndex((event) => event.type === 'resend') > events.findIndex((event) => event.type === 'submit-code' && event.code === '111111'), true);
+  assert.equal(events.findIndex((event) => event.type === 'resend') < events.findIndex((event) => event.type === 'submit-code' && event.code === '222222'), true);
   assert.equal(events.some((event) => event.type === 'complete' && event.step === 'plus-checkout-create'), true);
 });
 

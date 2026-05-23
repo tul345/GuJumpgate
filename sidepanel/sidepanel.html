@@ -122,6 +122,7 @@
           <option value="local-cpa-json" selected>本地CPA JSON 有RT</option>
           <option value="local-cpa-json-no-rt">本地CPA JSON 无RT</option>
           <option value="cpa">CPA 面板</option>
+          <option value="cpa-no-rt">CPA 面板 无RT</option>
           <option value="sub2api">SUB2API</option>
           <option value="codex2api">Codex2API</option>
         </select>
@@ -336,6 +337,21 @@
           <input type="number" id="input-hosted-checkout-verification-popup-delay-seconds" class="data-input auto-delay-input"
             value="4" min="0" max="60" step="1" title="检测到 PayPal hosted checkout 验证码弹窗后，等待多少秒再开始获取验证码" />
           <span class="setting-caption">检测到验证码弹窗后，先等待多少秒再开始获取验证码；默认 4 秒</span>
+        </div>
+      </div>
+      <div class="data-row" id="row-hosted-checkout-verification-resend-settings" style="display:none;">
+        <span class="data-label">验证码重发</span>
+        <div class="data-inline">
+          <span class="setting-caption">无新码</span>
+          <input type="number" id="input-hosted-checkout-verification-poll-before-resend" class="data-input auto-delay-input"
+            value="1" min="1" max="12" step="1" title="接口连续多少次没有新验证码后点击 PayPal Resend" />
+          <span class="setting-caption">重发</span>
+          <input type="number" id="input-hosted-checkout-verification-resend-max-attempts" class="data-input auto-delay-input"
+            value="1" min="0" max="5" step="1" title="PayPal hosted checkout 验证码最多自动点击几次 Resend；0 表示不点" />
+          <span class="setting-caption">等待</span>
+          <input type="number" id="input-hosted-checkout-verification-after-resend-wait-seconds" class="data-input auto-delay-input"
+            value="8" min="0" max="60" step="1" title="点击 Resend 后等待多少秒再取新码" />
+          <span class="data-unit">秒</span>
         </div>
       </div>
       <div class="data-row" id="row-hosted-checkout-phone" style="display:none;">
@@ -808,6 +824,20 @@
             <span>启用</span>
           </label>
           <span class="setting-caption">依赖后端 RANDOM_SUBDOMAIN_DOMAINS</span>
+        </div>
+      </div>
+      <div class="data-row" id="row-temp-email-edu-subdomain-toggle" style="display:none;">
+        <span class="data-label">教育子域</span>
+        <div class="data-inline">
+          <label class="toggle-switch" for="input-temp-email-use-edu-subdomain"
+            title="启用后生成 edu.example.com 格式的邮箱">
+            <input type="checkbox" id="input-temp-email-use-edu-subdomain" />
+            <span class="toggle-switch-track" aria-hidden="true">
+              <span class="toggle-switch-thumb"></span>
+            </span>
+            <span>启用</span>
+          </label>
+          <span class="setting-caption">生成 edu 前缀子域名</span>
         </div>
       </div>
       <div class="data-row" id="row-temp-email-domain" style="display:none;">

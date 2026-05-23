@@ -197,6 +197,10 @@ const btnHostedCheckoutManualFetch = document.getElementById('btn-hosted-checkou
 const displayHostedCheckoutManualCode = document.getElementById('display-hosted-checkout-manual-code');
 const rowHostedCheckoutVerificationPopupDelay = document.getElementById('row-hosted-checkout-verification-popup-delay');
 const inputHostedCheckoutVerificationPopupDelaySeconds = document.getElementById('input-hosted-checkout-verification-popup-delay-seconds');
+const rowHostedCheckoutVerificationResendSettings = document.getElementById('row-hosted-checkout-verification-resend-settings');
+const inputHostedCheckoutVerificationPollBeforeResend = document.getElementById('input-hosted-checkout-verification-poll-before-resend');
+const inputHostedCheckoutVerificationResendMaxAttempts = document.getElementById('input-hosted-checkout-verification-resend-max-attempts');
+const inputHostedCheckoutVerificationAfterResendWaitSeconds = document.getElementById('input-hosted-checkout-verification-after-resend-wait-seconds');
 const rowHostedCheckoutPhone = document.getElementById('row-hosted-checkout-phone');
 const inputHostedCheckoutPhone = document.getElementById('input-hosted-checkout-phone');
 const rowHostedCheckoutSmsPool = document.getElementById('row-hosted-checkout-sms-pool');
@@ -282,6 +286,8 @@ const rowTempEmailReceiveMailbox = document.getElementById('row-temp-email-recei
 const inputTempEmailReceiveMailbox = document.getElementById('input-temp-email-receive-mailbox');
 const rowTempEmailRandomSubdomainToggle = document.getElementById('row-temp-email-random-subdomain-toggle');
 const inputTempEmailUseRandomSubdomain = document.getElementById('input-temp-email-use-random-subdomain');
+const rowTempEmailEduSubdomainToggle = document.getElementById('row-temp-email-edu-subdomain-toggle');
+const inputTempEmailUseEduSubdomain = document.getElementById('input-temp-email-use-edu-subdomain');
 const rowTempEmailDomain = document.getElementById('row-temp-email-domain');
 const selectTempEmailDomain = document.getElementById('select-temp-email-domain');
 const tempEmailDomainPickerRoot = document.getElementById('temp-email-domain-picker');
@@ -613,6 +619,15 @@ const AUTO_STEP_DELAY_MAX_SECONDS = 600;
 const VERIFICATION_RESEND_COUNT_MIN = 0;
 const VERIFICATION_RESEND_COUNT_MAX = 20;
 const DEFAULT_VERIFICATION_RESEND_COUNT = 4;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MIN = 1;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MAX = 12;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 1;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MIN = 0;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MAX = 5;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS = 1;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MIN_SECONDS = 0;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MAX_SECONDS = 60;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS = 8;
 const PHONE_REPLACEMENT_LIMIT_MIN = 1;
 const PHONE_REPLACEMENT_LIMIT_MAX = 20;
 const DEFAULT_PHONE_VERIFICATION_REPLACEMENT_LIMIT = 3;
@@ -795,6 +810,7 @@ const HERO_SMS_COUNTRY_ISO_CODE_BY_NAME = (() => {
 })();
 const LOCAL_CPA_JSON_PANEL_MODE = 'local-cpa-json';
 const LOCAL_CPA_JSON_NO_RT_PANEL_MODE = 'local-cpa-json-no-rt';
+const CPA_NO_RT_PANEL_MODE = 'cpa-no-rt';
 const DEFAULT_PANEL_MODE = LOCAL_CPA_JSON_PANEL_MODE;
 const DEFAULT_LOCAL_CPA_JSON_RELATIVE_AUTH_DIR = '.cli-proxy-api';
 const DEFAULT_LOCAL_CPA_STEP9_MODE = 'submit';
@@ -2832,6 +2848,46 @@ function normalizeHostedCheckoutVerificationPopupDelaySeconds(value) {
   return Math.min(60, Math.max(0, Math.floor(numeric)));
 }
 
+function normalizeBoundedIntegerInputValue(value, fallback, min, max) {
+  const rawValue = String(value ?? '').trim();
+  const numeric = Number(rawValue);
+  const fallbackNumeric = Number(fallback);
+  const normalizedFallback = Number.isFinite(fallbackNumeric)
+    ? Math.min(max, Math.max(min, Math.floor(fallbackNumeric)))
+    : min;
+  if (!rawValue || !Number.isFinite(numeric)) {
+    return normalizedFallback;
+  }
+  return Math.min(max, Math.max(min, Math.floor(numeric)));
+}
+
+function normalizeHostedCheckoutVerificationPollBeforeResend(value) {
+  return normalizeBoundedIntegerInputValue(
+    value,
+    DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND,
+    HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MIN,
+    HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MAX
+  );
+}
+
+function normalizeHostedCheckoutVerificationResendMaxAttempts(value) {
+  return normalizeBoundedIntegerInputValue(
+    value,
+    DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS,
+    HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MIN,
+    HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MAX
+  );
+}
+
+function normalizeHostedCheckoutVerificationAfterResendWaitSeconds(value) {
+  return normalizeBoundedIntegerInputValue(
+    value,
+    DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS,
+    HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MIN_SECONDS,
+    HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MAX_SECONDS
+  );
+}
+
 function normalizeHostedCheckoutVerificationUrlValue(value = '') {
   const rawValue = String(value || '').trim();
   if (!rawValue) {
@@ -3320,6 +3376,9 @@ function applyCloudflareTempEmailSettingsState(state = {}) {
   setCloudflareTempEmailLookupMode(state?.cloudflareTempEmailLookupMode);
   if (inputTempEmailUseRandomSubdomain) {
     inputTempEmailUseRandomSubdomain.checked = Boolean(state?.cloudflareTempEmailUseRandomSubdomain);
+  }
+  if (typeof inputTempEmailUseEduSubdomain !== 'undefined' && inputTempEmailUseEduSubdomain) {
+    inputTempEmailUseEduSubdomain.checked = Boolean(state?.cloudflareTempEmailUseEduSubdomain);
   }
   renderCloudflareTempEmailDomainOptions(state?.cloudflareTempEmailDomain || '');
   setCloudflareTempEmailDomainEditMode(false, { clearInput: true });
@@ -3870,6 +3929,7 @@ function collectSettingsPayload() {
       const normalized = String(value || '').trim().toLowerCase();
       return normalized === 'local-cpa-json'
         || normalized === 'local-cpa-json-no-rt'
+        || normalized === 'cpa-no-rt'
         || normalized === 'sub2api'
         || normalized === 'codex2api'
         ? normalized
@@ -4149,6 +4209,9 @@ function collectSettingsPayload() {
       : 'receive-mailbox',
     cloudflareTempEmailReceiveMailbox: cloudflareTempEmailReceiveMailboxNormalizer(inputTempEmailReceiveMailbox.value),
     cloudflareTempEmailUseRandomSubdomain: Boolean(inputTempEmailUseRandomSubdomain?.checked),
+    cloudflareTempEmailUseEduSubdomain: typeof inputTempEmailUseEduSubdomain !== 'undefined' && inputTempEmailUseEduSubdomain
+      ? Boolean(inputTempEmailUseEduSubdomain.checked)
+      : false,
     cloudflareTempEmailDomain: selectedCloudflareTempEmailDomain,
     cloudflareTempEmailDomains: tempEmailDomains,
     cloudMailBaseUrl: normalizeCloudMailBaseUrlInput((typeof inputCloudMailBaseUrl !== 'undefined' && inputCloudMailBaseUrl) ? inputCloudMailBaseUrl.value : ''),
@@ -4170,6 +4233,15 @@ function collectSettingsPayload() {
     hostedCheckoutVerificationPopupDelaySeconds: typeof inputHostedCheckoutVerificationPopupDelaySeconds !== 'undefined' && inputHostedCheckoutVerificationPopupDelaySeconds
       ? normalizeHostedCheckoutVerificationPopupDelaySeconds(inputHostedCheckoutVerificationPopupDelaySeconds.value)
       : 4,
+    hostedCheckoutVerificationPollBeforeResend: typeof inputHostedCheckoutVerificationPollBeforeResend !== 'undefined' && inputHostedCheckoutVerificationPollBeforeResend
+      ? normalizeHostedCheckoutVerificationPollBeforeResend(inputHostedCheckoutVerificationPollBeforeResend.value)
+      : DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND,
+    hostedCheckoutVerificationResendMaxAttempts: typeof inputHostedCheckoutVerificationResendMaxAttempts !== 'undefined' && inputHostedCheckoutVerificationResendMaxAttempts
+      ? normalizeHostedCheckoutVerificationResendMaxAttempts(inputHostedCheckoutVerificationResendMaxAttempts.value)
+      : DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS,
+    hostedCheckoutVerificationAfterResendWaitSeconds: typeof inputHostedCheckoutVerificationAfterResendWaitSeconds !== 'undefined' && inputHostedCheckoutVerificationAfterResendWaitSeconds
+      ? normalizeHostedCheckoutVerificationAfterResendWaitSeconds(inputHostedCheckoutVerificationAfterResendWaitSeconds.value)
+      : DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS,
     hostedCheckoutVerificationUrl: typeof inputHostedCheckoutVerificationUrl !== 'undefined' && inputHostedCheckoutVerificationUrl
       ? normalizeHostedCheckoutVerificationUrlValue(inputHostedCheckoutVerificationUrl.value)
       : '',
@@ -7940,6 +8012,7 @@ function normalizePanelMode(value = '') {
   if (
     normalized === localCpaJsonMode
     || normalized === localCpaJsonNoRtMode
+    || normalized === CPA_NO_RT_PANEL_MODE
     || normalized === 'sub2api'
     || normalized === 'codex2api'
   ) {
@@ -8491,6 +8564,7 @@ function updatePlusModeUI() {
     typeof rowHostedCheckoutVerificationUrl !== 'undefined' ? rowHostedCheckoutVerificationUrl : null,
     typeof rowHostedCheckoutManualFetch !== 'undefined' ? rowHostedCheckoutManualFetch : null,
     typeof rowHostedCheckoutVerificationPopupDelay !== 'undefined' ? rowHostedCheckoutVerificationPopupDelay : null,
+    typeof rowHostedCheckoutVerificationResendSettings !== 'undefined' ? rowHostedCheckoutVerificationResendSettings : null,
     typeof rowHostedCheckoutPhone !== 'undefined' ? rowHostedCheckoutPhone : null,
     typeof rowHostedCheckoutSmsPool !== 'undefined' ? rowHostedCheckoutSmsPool : null,
   ].forEach((row) => {
@@ -9322,10 +9396,16 @@ function syncStepDefinitionsForMode(plusModeEnabled = false, plusPaymentMethodOr
   const noRtPanelMode = typeof LOCAL_CPA_JSON_NO_RT_PANEL_MODE === 'string'
     ? LOCAL_CPA_JSON_NO_RT_PANEL_MODE
     : 'local-cpa-json-no-rt';
+  const cpaNoRtPanelMode = typeof CPA_NO_RT_PANEL_MODE === 'string'
+    ? CPA_NO_RT_PANEL_MODE
+    : 'cpa-no-rt';
   const nextPanelMode = String(options.panelMode || (typeof latestState !== 'undefined' ? latestState?.panelMode : '') || '').trim().toLowerCase();
-  const useNoRtWorkflow = nextPanelMode === noRtPanelMode;
+  const useNoRtWorkflow = nextPanelMode === noRtPanelMode || nextPanelMode === cpaNoRtPanelMode;
   const currentlyUsingNoRtWorkflow = (typeof workflowNodes !== 'undefined' ? workflowNodes : [])
-    .some((node) => String(node?.nodeId || '').trim() === 'local-cpa-json-export');
+    .some((node) => {
+      const nodeId = String(node?.nodeId || '').trim();
+      return nodeId === 'local-cpa-json-export' || nodeId === 'cpa-session-import';
+    });
   const noRtWorkflowModeChanged = useNoRtWorkflow !== currentlyUsingNoRtWorkflow;
   const nextActiveFlowId = String(
     options.activeFlowId
@@ -9754,6 +9834,21 @@ function applySettingsState(state) {
   if (typeof inputHostedCheckoutVerificationPopupDelaySeconds !== 'undefined' && inputHostedCheckoutVerificationPopupDelaySeconds) {
     inputHostedCheckoutVerificationPopupDelaySeconds.value = String(
       normalizeHostedCheckoutVerificationPopupDelaySeconds(state?.hostedCheckoutVerificationPopupDelaySeconds)
+    );
+  }
+  if (typeof inputHostedCheckoutVerificationPollBeforeResend !== 'undefined' && inputHostedCheckoutVerificationPollBeforeResend) {
+    inputHostedCheckoutVerificationPollBeforeResend.value = String(
+      normalizeHostedCheckoutVerificationPollBeforeResend(state?.hostedCheckoutVerificationPollBeforeResend)
+    );
+  }
+  if (typeof inputHostedCheckoutVerificationResendMaxAttempts !== 'undefined' && inputHostedCheckoutVerificationResendMaxAttempts) {
+    inputHostedCheckoutVerificationResendMaxAttempts.value = String(
+      normalizeHostedCheckoutVerificationResendMaxAttempts(state?.hostedCheckoutVerificationResendMaxAttempts)
+    );
+  }
+  if (typeof inputHostedCheckoutVerificationAfterResendWaitSeconds !== 'undefined' && inputHostedCheckoutVerificationAfterResendWaitSeconds) {
+    inputHostedCheckoutVerificationAfterResendWaitSeconds.value = String(
+      normalizeHostedCheckoutVerificationAfterResendWaitSeconds(state?.hostedCheckoutVerificationAfterResendWaitSeconds)
     );
   }
   if (typeof inputHostedCheckoutVerificationUrl !== 'undefined' && inputHostedCheckoutVerificationUrl) {
@@ -11119,6 +11214,9 @@ function updateMailProviderUI() {
   if (rowTempEmailRandomSubdomainToggle) {
     rowTempEmailRandomSubdomainToggle.style.display = showCloudflareTempEmailRandomSubdomainToggle ? '' : 'none';
   }
+  if (typeof rowTempEmailEduSubdomainToggle !== 'undefined' && rowTempEmailEduSubdomainToggle) {
+    rowTempEmailEduSubdomainToggle.style.display = showCloudflareTempEmailRandomSubdomainToggle ? '' : 'none';
+  }
   rowTempEmailDomain.style.display = showCloudflareTempEmailDomain ? '' : 'none';
   const { domains: tempEmailDomains } = getCloudflareTempEmailDomainsFromState();
   if (showCloudflareTempEmailDomain) {
@@ -11230,6 +11328,14 @@ function updateMailProviderUI() {
   }
   if (autoHintText && showCloudflareTempEmailRandomSubdomainToggle && inputTempEmailUseRandomSubdomain?.checked) {
     autoHintText.textContent = '已启用随机子域名：扩展会按当前选中的 Temp 域名提交，并额外携带 enableRandomSubdomain；是否生效取决于后端 RANDOM_SUBDOMAIN_DOMAINS 配置。';
+  }
+  if (
+    autoHintText
+    && showCloudflareTempEmailRandomSubdomainToggle
+    && typeof inputTempEmailUseEduSubdomain !== 'undefined'
+    && inputTempEmailUseEduSubdomain?.checked
+  ) {
+    autoHintText.textContent = '已启用教育子域名：生成的邮箱地址将使用 edu 前缀子域名（如 user@edu.example.com）；是否生效取决于后端支持。';
   }
   if (autoHintText && useIcloudProvider && showIcloudForwardMailProvider) {
     const forwardProvider = normalizeIcloudForwardMailProvider(icloudForwardMailProviderValue);
@@ -11640,7 +11746,8 @@ function updatePanelModeUI() {
   const useLocalCpaJsonNoRt = panelMode === LOCAL_CPA_JSON_NO_RT_PANEL_MODE;
   const useSub2Api = panelMode === 'sub2api';
   const useCodex2Api = panelMode === 'codex2api';
-  const useCpa = panelMode === 'cpa';
+  const useCpa = panelMode === 'cpa' || panelMode === CPA_NO_RT_PANEL_MODE;
+  const useCpaCallback = panelMode === 'cpa';
   const setRowDisplay = (row, visible) => {
     if (!row) {
       return;
@@ -11656,7 +11763,7 @@ function updatePanelModeUI() {
   validateLocalCpaJsonPluginDir({ panelMode });
   setRowDisplay(rowVpsUrl, useCpa);
   setRowDisplay(rowVpsPassword, useCpa);
-  setRowDisplay(rowLocalCpaStep9Mode, useCpa);
+  setRowDisplay(rowLocalCpaStep9Mode, useCpaCallback);
   setRowDisplay(rowSub2ApiUrl, useSub2Api);
   setRowDisplay(rowSub2ApiEmail, useSub2Api);
   setRowDisplay(rowSub2ApiPassword, useSub2Api);
@@ -12535,6 +12642,7 @@ function validateLocalCpaJsonPluginDir(options = {}) {
       const normalized = String(value || '').trim().toLowerCase();
       return normalized === 'local-cpa-json'
         || normalized === 'local-cpa-json-no-rt'
+        || normalized === 'cpa-no-rt'
         || normalized === 'sub2api'
         || normalized === 'codex2api'
         ? normalized
@@ -14555,6 +14663,13 @@ inputTempEmailUseRandomSubdomain?.addEventListener('change', () => {
   saveSettings({ silent: true }).catch(() => { });
 });
 
+inputTempEmailUseEduSubdomain?.addEventListener('change', () => {
+  updateMailProviderUI();
+  clearRegistrationEmail({ silent: true }).catch(() => { });
+  markSettingsDirty(true);
+  saveSettings({ silent: true }).catch(() => { });
+});
+
 inputAutoSkipFailuresThreadIntervalMinutes.addEventListener('input', () => {
   markSettingsDirty(true);
   scheduleSettingsAutoSave();
@@ -14862,6 +14977,24 @@ function syncHostedCheckoutVerificationPopupDelayInput() {
   );
 }
 
+function syncHostedCheckoutVerificationResendInputs() {
+  if (inputHostedCheckoutVerificationPollBeforeResend) {
+    inputHostedCheckoutVerificationPollBeforeResend.value = String(
+      normalizeHostedCheckoutVerificationPollBeforeResend(inputHostedCheckoutVerificationPollBeforeResend.value)
+    );
+  }
+  if (inputHostedCheckoutVerificationResendMaxAttempts) {
+    inputHostedCheckoutVerificationResendMaxAttempts.value = String(
+      normalizeHostedCheckoutVerificationResendMaxAttempts(inputHostedCheckoutVerificationResendMaxAttempts.value)
+    );
+  }
+  if (inputHostedCheckoutVerificationAfterResendWaitSeconds) {
+    inputHostedCheckoutVerificationAfterResendWaitSeconds.value = String(
+      normalizeHostedCheckoutVerificationAfterResendWaitSeconds(inputHostedCheckoutVerificationAfterResendWaitSeconds.value)
+    );
+  }
+}
+
 async function handleHostedCheckoutManualFetch() {
   if (!btnHostedCheckoutManualFetch) {
     return;
@@ -14929,6 +15062,21 @@ inputHostedCheckoutVerificationPopupDelaySeconds?.addEventListener('input', () =
 inputHostedCheckoutVerificationPopupDelaySeconds?.addEventListener('blur', () => {
   syncHostedCheckoutVerificationPopupDelayInput();
   saveSettings({ silent: true }).catch(() => { });
+});
+
+[
+  inputHostedCheckoutVerificationPollBeforeResend,
+  inputHostedCheckoutVerificationResendMaxAttempts,
+  inputHostedCheckoutVerificationAfterResendWaitSeconds,
+].forEach((input) => {
+  input?.addEventListener('input', () => {
+    markSettingsDirty(true);
+    scheduleSettingsAutoSave();
+  });
+  input?.addEventListener('blur', () => {
+    syncHostedCheckoutVerificationResendInputs();
+    saveSettings({ silent: true }).catch(() => { });
+  });
 });
 
 inputHostedCheckoutVerificationUrl?.addEventListener('input', () => {
@@ -15761,11 +15909,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined && inputTempEmailUseRandomSubdomain) {
         inputTempEmailUseRandomSubdomain.checked = Boolean(message.payload.cloudflareTempEmailUseRandomSubdomain);
       }
+      if (
+        message.payload.cloudflareTempEmailUseEduSubdomain !== undefined
+        && typeof inputTempEmailUseEduSubdomain !== 'undefined'
+        && inputTempEmailUseEduSubdomain
+      ) {
+        inputTempEmailUseEduSubdomain.checked = Boolean(message.payload.cloudflareTempEmailUseEduSubdomain);
+      }
       if (message.payload.cloudflareTempEmailDomain !== undefined || message.payload.cloudflareTempEmailDomains !== undefined) {
         renderCloudflareTempEmailDomainOptions(message.payload.cloudflareTempEmailDomain || latestState?.cloudflareTempEmailDomain || '');
       }
       if (
         message.payload.cloudflareTempEmailUseRandomSubdomain !== undefined
+        || message.payload.cloudflareTempEmailUseEduSubdomain !== undefined
         || message.payload.cloudflareTempEmailLookupMode !== undefined
         || message.payload.cloudflareTempEmailDomain !== undefined
         || message.payload.cloudflareTempEmailDomains !== undefined
@@ -15817,6 +15973,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (
         message.payload.plusModeEnabled !== undefined
         || message.payload.plusPaymentMethod !== undefined
+        || message.payload.hostedCheckoutVerificationPollBeforeResend !== undefined
+        || message.payload.hostedCheckoutVerificationResendMaxAttempts !== undefined
+        || message.payload.hostedCheckoutVerificationAfterResendWaitSeconds !== undefined
         || message.payload.gopayHelperPhoneMode !== undefined
         || message.payload.gopayHelperAutoModeEnabled !== undefined
         || message.payload.gopayHelperOtpChannel !== undefined
@@ -15953,6 +16112,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.payload.hostedCheckoutVerificationPopupDelaySeconds !== undefined && inputHostedCheckoutVerificationPopupDelaySeconds) {
         inputHostedCheckoutVerificationPopupDelaySeconds.value = String(
           normalizeHostedCheckoutVerificationPopupDelaySeconds(message.payload.hostedCheckoutVerificationPopupDelaySeconds)
+        );
+      }
+      if (message.payload.hostedCheckoutVerificationPollBeforeResend !== undefined && inputHostedCheckoutVerificationPollBeforeResend) {
+        inputHostedCheckoutVerificationPollBeforeResend.value = String(
+          normalizeHostedCheckoutVerificationPollBeforeResend(message.payload.hostedCheckoutVerificationPollBeforeResend)
+        );
+      }
+      if (message.payload.hostedCheckoutVerificationResendMaxAttempts !== undefined && inputHostedCheckoutVerificationResendMaxAttempts) {
+        inputHostedCheckoutVerificationResendMaxAttempts.value = String(
+          normalizeHostedCheckoutVerificationResendMaxAttempts(message.payload.hostedCheckoutVerificationResendMaxAttempts)
+        );
+      }
+      if (message.payload.hostedCheckoutVerificationAfterResendWaitSeconds !== undefined && inputHostedCheckoutVerificationAfterResendWaitSeconds) {
+        inputHostedCheckoutVerificationAfterResendWaitSeconds.value = String(
+          normalizeHostedCheckoutVerificationAfterResendWaitSeconds(message.payload.hostedCheckoutVerificationAfterResendWaitSeconds)
         );
       }
       if (message.payload.hostedCheckoutVerificationUrl !== undefined && inputHostedCheckoutVerificationUrl) {

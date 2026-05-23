@@ -215,6 +215,100 @@ test('local cpa json no-RT export runs as step 7 after Plus checkout completes',
   assert.ok(events.logs.some(({ message }) => /本地CPA JSON 无RT 已导出/.test(message)));
 });
 
+test('cpa no-RT upload runs as step 7 after Plus checkout completes', async () => {
+  const source = fs.readFileSync('background/steps/wait-registration-success.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundStep6;`)(globalScope);
+
+  const events = {
+    completed: [],
+    ensureCalls: [],
+    importCalls: [],
+    logs: [],
+    sendCalls: [],
+    waits: [],
+  };
+
+  const executor = api.createStep6Executor({
+    addLog: async (message, level = 'info', options = {}) => {
+      events.logs.push({ message, level, options });
+    },
+    chrome: {
+      tabs: {
+        create: async (payload) => {
+          events.tabCreate = payload;
+          return { id: 23 };
+        },
+        remove: async (tabId) => {
+          events.tabRemove = tabId;
+        },
+      },
+    },
+    completeNodeFromBackground: async (nodeId, payload) => {
+      events.completed.push({ nodeId, payload });
+    },
+    createCpaApi: () => ({
+      importCurrentChatGptSession: async (state = {}, options = {}) => {
+        events.importCalls.push({ state, options });
+        return {
+          verifiedStatus: 'CPA 无RT会话上传完成：user@example.com',
+          cpaImportedFileName: 'codex-user@example.com-plus.json',
+          cpaImportedEmail: 'user@example.com',
+        };
+      },
+    }),
+    ensureContentScriptReadyOnTab: async (sourceId, tabId, options = {}) => {
+      events.ensureCalls.push({ sourceId, tabId, options });
+    },
+    getPanelMode: () => 'cpa-no-rt',
+    sendToContentScriptResilient: async (sourceId, message, options = {}) => {
+      events.sendCalls.push({ sourceId, message, options });
+      return {
+        accessToken: 'access-token-from-session',
+        email: 'user@example.com',
+        expiresAt: '2026-05-20T00:00:00.000Z',
+        session: {
+          sessionToken: 'session-cookie-token',
+          user: { id: 'user-1', email: 'user@example.com' },
+          account: { id: 'acct-1', planType: 'plus' },
+          expires: '2026-05-20T00:00:00.000Z',
+        },
+      };
+    },
+    sleepWithStop: async (ms) => {
+      events.waits.push(ms);
+    },
+  });
+
+  await executor.executeCpaSessionImportNoRt({
+    panelMode: 'cpa-no-rt',
+    vpsUrl: 'http://localhost:8317/admin/accounts',
+    vpsPassword: 'cpa-key',
+  });
+
+  assert.deepStrictEqual(events.waits, [5000]);
+  assert.deepStrictEqual(events.tabCreate, { url: 'https://chatgpt.com/', active: false });
+  assert.equal(events.tabRemove, 23);
+  assert.equal(events.ensureCalls.length, 1);
+  assert.equal(events.sendCalls[0].message.type, 'PLUS_CHECKOUT_GET_STATE');
+  assert.equal(events.sendCalls[0].message.payload.includeSession, true);
+  assert.equal(events.importCalls.length, 1);
+  assert.equal(events.importCalls[0].state.accessToken, 'access-token-from-session');
+  assert.equal(events.importCalls[0].state.sessionToken, 'session-cookie-token');
+  assert.equal(events.importCalls[0].state.accountId, 'acct-1');
+  assert.equal(events.importCalls[0].state.planType, 'plus');
+  assert.equal(events.importCalls[0].options.lastRefresh, '');
+  assert.deepStrictEqual(events.completed, [{
+    nodeId: 'cpa-session-import',
+    payload: {
+      verifiedStatus: 'CPA 无RT会话上传完成：user@example.com',
+      cpaImportedFileName: 'codex-user@example.com-plus.json',
+      cpaImportedEmail: 'user@example.com',
+    },
+  }]);
+  assert.ok(events.logs.some(({ message }) => /上传当前会话到 CPA/.test(message)));
+});
+
 test('step 7 retries up to configured limit and then fails', async () => {
   const source = fs.readFileSync('background/steps/oauth-login.js', 'utf8');
   const globalScope = {};

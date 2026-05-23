@@ -116,6 +116,15 @@ const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const VERIFICATION_RESEND_COUNT_MIN = 0;
 const VERIFICATION_RESEND_COUNT_MAX = 20;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MIN = 1;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MAX = 12;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 1;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MIN = 0;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MAX = 5;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS = 1;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MIN_SECONDS = 0;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MAX_SECONDS = 60;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS = 8;
 const HERO_SMS_COUNTRY_ID = 52;
 const HERO_SMS_COUNTRY_LABEL = 'Thailand';
 const PHONE_SMS_PROVIDER_HERO_SMS = 'hero-sms';
@@ -169,6 +178,9 @@ const self = {
 const PERSISTED_SETTING_DEFAULTS = {
   autoStepDelaySeconds: null,
   hostedCheckoutVerificationPopupDelaySeconds: 4,
+  hostedCheckoutVerificationPollBeforeResend: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND,
+  hostedCheckoutVerificationResendMaxAttempts: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS,
+  hostedCheckoutVerificationAfterResendWaitSeconds: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS,
   hotmailAliasEnabled: false,
   gopayHelperApiUrl: 'https://your-gpc-helper-domain.example',
   mailProvider: '163',
@@ -239,6 +251,15 @@ return {
   assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPopupDelaySeconds', ''), 4);
   assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPopupDelaySeconds', '9'), 9);
   assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPopupDelaySeconds', '999'), 60);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPollBeforeResend', ''), 1);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPollBeforeResend', '0'), 1);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationPollBeforeResend', '99'), 12);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationResendMaxAttempts', ''), 1);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationResendMaxAttempts', '-1'), 0);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationResendMaxAttempts', '99'), 5);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationAfterResendWaitSeconds', ''), 8);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationAfterResendWaitSeconds', '-1'), 0);
+  assert.equal(api.normalizePersistentSettingValue('hostedCheckoutVerificationAfterResendWaitSeconds', '999'), 60);
   assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'auto'), 'auto');
   assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'builtin'), 'auto');
   assert.equal(api.normalizePersistentSettingValue('gopayHelperPhoneMode', 'unknown'), 'manual');
@@ -315,6 +336,10 @@ return {
   assert.equal(
     api.normalizePersistentSettingValue('panelMode', 'local-cpa-json-no-rt'),
     'local-cpa-json-no-rt'
+  );
+  assert.equal(
+    api.normalizePersistentSettingValue('panelMode', 'cpa-no-rt'),
+    'cpa-no-rt'
   );
   assert.equal(
     api.normalizeAccountRunHistoryHelperBaseUrl(''),

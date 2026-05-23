@@ -7,6 +7,7 @@ test('background imports step 1~10 modules', () => {
 
   [
     'background/steps/open-chatgpt.js',
+    'background/cpa-api.js',
     'background/steps/submit-signup-email.js',
     'background/steps/fill-password.js',
     'background/steps/fetch-signup-code.js',

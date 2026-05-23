@@ -3,10 +3,11 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createFlowCapabilitiesModule() {
   const DEFAULT_FLOW_ID = 'openai';
   const DEFAULT_PANEL_MODE = 'local-cpa-json';
+  const CPA_NO_RT_PANEL_MODE = 'cpa-no-rt';
   const LOCAL_CPA_JSON_NO_RT_PANEL_MODE = 'local-cpa-json-no-rt';
   const SIGNUP_METHOD_EMAIL = 'email';
   const SIGNUP_METHOD_PHONE = 'phone';
-  const VALID_PANEL_MODES = Object.freeze(['local-cpa-json', LOCAL_CPA_JSON_NO_RT_PANEL_MODE, 'cpa', 'sub2api', 'codex2api']);
+  const VALID_PANEL_MODES = Object.freeze(['local-cpa-json', LOCAL_CPA_JSON_NO_RT_PANEL_MODE, 'cpa', CPA_NO_RT_PANEL_MODE, 'sub2api', 'codex2api']);
 
   const DEFAULT_FLOW_CAPABILITIES = Object.freeze({
     supportsEmailSignup: true,
@@ -28,7 +29,7 @@
       supportsPhoneVerificationSettings: true,
       supportsPlusMode: true,
       supportsContributionMode: true,
-      supportsPlatformBinding: ['local-cpa-json', LOCAL_CPA_JSON_NO_RT_PANEL_MODE, 'cpa', 'sub2api', 'codex2api'],
+      supportsPlatformBinding: ['local-cpa-json', LOCAL_CPA_JSON_NO_RT_PANEL_MODE, 'cpa', CPA_NO_RT_PANEL_MODE, 'sub2api', 'codex2api'],
       supportsLuckmail: true,
       supportsOauthTimeoutBudget: true,
       stepDefinitionMode: 'openai-dynamic',
@@ -52,6 +53,10 @@
     cpa: Object.freeze({
       supportsPhoneSignup: true,
       requiresPhoneSignupWarning: true,
+    }),
+    [CPA_NO_RT_PANEL_MODE]: Object.freeze({
+      supportsPhoneSignup: true,
+      requiresPhoneSignupWarning: false,
     }),
     'local-cpa-json': Object.freeze({
       supportsPhoneSignup: true,
@@ -119,6 +124,9 @@
     }
     if (normalized === LOCAL_CPA_JSON_NO_RT_PANEL_MODE) {
       return '本地CPA JSON 无RT';
+    }
+    if (normalized === CPA_NO_RT_PANEL_MODE) {
+      return 'CPA 面板 无RT';
     }
     if (normalized === 'sub2api') {
       return 'SUB2API';

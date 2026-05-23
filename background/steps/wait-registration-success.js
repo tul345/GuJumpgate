@@ -2,6 +2,8 @@
   root.MultiPageBackgroundStep6 = factory();
 })(typeof self !== 'undefined' ? self : globalThis, function createBackgroundStep6Module() {
   const DEFAULT_REGISTRATION_SUCCESS_WAIT_MS = 4000;
+  const CPA_NO_RT_PANEL_MODE = 'cpa-no-rt';
+  const CPA_SESSION_IMPORT_NODE_ID = 'cpa-session-import';
   const LOCAL_CPA_JSON_NO_RT_PANEL_MODE = 'local-cpa-json-no-rt';
   const LOCAL_CPA_JSON_EXPORT_NODE_ID = 'local-cpa-json-export';
   const CHATGPT_SESSION_EXPORT_URL = 'https://chatgpt.com/';
@@ -118,6 +120,7 @@
       buildLocalHelperEndpoint = null,
       chrome: chromeApi = globalThis.chrome,
       completeNodeFromBackground,
+      createCpaApi = null,
       createLocalCliProxyApi = null,
       ensureContentScriptReadyOnTab = async () => {},
       getErrorMessage = (error) => error?.message || String(error || '未知错误'),
@@ -130,12 +133,36 @@
       sleepWithStop = async (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0))),
     } = deps;
 
+    let cpaApi = null;
+
     function normalizeString(value = '') {
       return String(value || '').trim();
     }
 
     function isLocalCpaJsonNoRtMode(state = {}) {
       return normalizeString(getPanelMode(state)) === LOCAL_CPA_JSON_NO_RT_PANEL_MODE;
+    }
+
+    function isCpaNoRtMode(state = {}) {
+      return normalizeString(getPanelMode(state)) === CPA_NO_RT_PANEL_MODE;
+    }
+
+    function getCpaApi() {
+      if (cpaApi) {
+        return cpaApi;
+      }
+      const factory = createCpaApi
+        || globalThis.MultiPageBackgroundCpaApi?.createCpaApi
+        || null;
+      if (typeof factory !== 'function') {
+        throw new Error('CPA 管理接口模块未加载，无法上传当前 ChatGPT 会话。');
+      }
+      cpaApi = factory({
+        addLog,
+        fetchImpl: typeof globalThis.fetch === 'function' ? globalThis.fetch.bind(globalThis) : null,
+        sessionToJsonConverter: globalThis.MultiPageSessionToJsonConverter,
+      });
+      return cpaApi;
     }
 
     function getLocalCliProxyApi() {
@@ -307,6 +334,31 @@
       };
     }
 
+    async function importCpaSessionNoRt(state = {}, options = {}) {
+      const visibleStep = Math.max(1, Math.floor(Number(options.visibleStep) || 7));
+      const sessionResult = await readChatGptSessionForExport(state, visibleStep);
+      const api = getCpaApi();
+      return api.importCurrentChatGptSession({
+        ...state,
+        session: sessionResult?.session,
+        accessToken: sessionResult?.accessToken,
+        sessionToken: sessionResult?.session?.sessionToken,
+        email: sessionResult?.email || sessionResult?.session?.user?.email || state?.email,
+        expiresAt: sessionResult?.expiresAt || sessionResult?.session?.expires,
+        accountId: sessionResult?.session?.account?.id,
+        userId: sessionResult?.session?.user?.id,
+        planType: sessionResult?.session?.account?.planType,
+      }, {
+        visibleStep,
+        logLabel: `步骤 ${visibleStep}`,
+        logOptions: { step: visibleStep, stepKey: CPA_SESSION_IMPORT_NODE_ID },
+        lastRefresh: '',
+        sourceName: 'SessionToJson CPA No RT',
+        timeoutMs: 120000,
+        importTimeoutMs: 120000,
+      });
+    }
+
     async function clearCookiesIfEnabled(state = {}) {
       if (!state?.step6CookieCleanupEnabled) {
         return;
@@ -365,7 +417,18 @@
       await completeNodeFromBackground(LOCAL_CPA_JSON_EXPORT_NODE_ID, completionPayload);
     }
 
+    async function executeCpaSessionImportNoRt(state = {}) {
+      if (!isCpaNoRtMode(state)) {
+        throw new Error('当前不是 CPA 面板无RT模式，不能执行 CPA 会话上传节点。');
+      }
+      await addLog('步骤 7：Plus Checkout 已完成，等待 5 秒后上传当前会话到 CPA...', 'info');
+      await sleepWithStop(5000);
+      const completionPayload = await importCpaSessionNoRt(state, { visibleStep: 7 });
+      await completeNodeFromBackground(CPA_SESSION_IMPORT_NODE_ID, completionPayload);
+    }
+
     return {
+      executeCpaSessionImportNoRt,
       executeLocalCpaJsonNoRtExport,
       executeStep6,
     };

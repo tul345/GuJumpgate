@@ -169,9 +169,14 @@
         method: 'POST',
         payload,
       });
-      const address = normalizeCloudflareTempEmailAddress(getCloudflareTempEmailAddressFromResponse(result));
+      let address = normalizeCloudflareTempEmailAddress(getCloudflareTempEmailAddressFromResponse(result));
       if (!address) {
         throw new Error('Cloudflare Temp Email 未返回可用邮箱地址。');
+      }
+
+      if (config.useEduSubdomain && address.includes('@')) {
+        const [localPart, domainPart] = address.split('@');
+        address = `${localPart}@edu.${domainPart}`;
       }
 
       await persistResolvedEmailState(latestState, address, {

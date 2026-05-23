@@ -6,6 +6,7 @@
   const PLUS_PAYMENT_METHOD_GOPAY = 'gopay';
   const PLUS_PAYMENT_METHOD_GPC_HELPER = 'gpc-helper';
   const PLUS_PAYMENT_STEP_KEY = 'paypal-approve';
+  const CPA_NO_RT_PANEL_MODE = 'cpa-no-rt';
   const LOCAL_CPA_JSON_NO_RT_PANEL_MODE = 'local-cpa-json-no-rt';
   const SIGNUP_METHOD_EMAIL = 'email';
   const SIGNUP_METHOD_PHONE = 'phone';
@@ -43,6 +44,15 @@
     sourceId: 'chatgpt',
     driverId: null,
     command: 'local-cpa-json-export',
+  };
+  const CPA_NO_RT_SESSION_IMPORT_STEP_DEFINITION = {
+    id: 7,
+    order: 70,
+    key: 'cpa-session-import',
+    title: '上传CPA无RT会话',
+    sourceId: 'chatgpt',
+    driverId: null,
+    command: 'cpa-session-import',
   };
 
   const PLUS_GOPAY_PREFIX_STEP_DEFINITIONS = [
@@ -231,6 +241,12 @@
         LOCAL_CPA_JSON_NO_RT_EXPORT_STEP_DEFINITION,
       ];
     }
+    if (panelMode === CPA_NO_RT_PANEL_MODE) {
+      return [
+        ...PLUS_PAYPAL_HOSTED_CHECKOUT_PREFIX_STEP_DEFINITIONS,
+        CPA_NO_RT_SESSION_IMPORT_STEP_DEFINITION,
+      ];
+    }
     if (!isPlusModeEnabled(options)) {
       if (signupMethod === SIGNUP_METHOD_PHONE) {
         return reloginAfterBindEmail
@@ -309,6 +325,7 @@
           ...PLUS_PAYPAL_HOSTED_CHECKOUT_STEP_DEFINITIONS,
           ...PLUS_PAYPAL_HOSTED_CHECKOUT_PREFIX_STEP_DEFINITIONS,
           LOCAL_CPA_JSON_NO_RT_EXPORT_STEP_DEFINITION,
+          CPA_NO_RT_SESSION_IMPORT_STEP_DEFINITION,
           ...PLUS_PAYPAL_HOSTED_CHECKOUT_PHONE_STEP_DEFINITIONS,
           ...PLUS_PAYPAL_HOSTED_CHECKOUT_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS,
           ...PLUS_PAYPAL_STEP_DEFINITIONS,

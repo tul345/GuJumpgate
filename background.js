@@ -4,6 +4,7 @@ importScripts(
   'shared/source-registry.js',
   'shared/flow-capabilities.js',
   'shared/session-to-json-converter.js',
+  'background/cpa-api.js',
   'background/local-cli-proxy-api.js',
   'managed-alias-utils.js',
   'mail2925-utils.js',
@@ -139,6 +140,11 @@ const PLUS_GPC_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS = self.MultiPageStepDe
 const LOCAL_CPA_JSON_NO_RT_STEP_DEFINITIONS = self.MultiPageStepDefinitions?.getSteps?.({
   activeFlowId: DEFAULT_ACTIVE_FLOW_ID,
   panelMode: 'local-cpa-json-no-rt',
+  plusModeEnabled: true,
+}) || PLUS_PAYPAL_STEP_DEFINITIONS.slice(0, 6);
+const CPA_NO_RT_STEP_DEFINITIONS = self.MultiPageStepDefinitions?.getSteps?.({
+  activeFlowId: DEFAULT_ACTIVE_FLOW_ID,
+  panelMode: 'cpa-no-rt',
   plusModeEnabled: true,
 }) || PLUS_PAYPAL_STEP_DEFINITIONS.slice(0, 6);
 const PLUS_STEP_DEFINITIONS = PLUS_PAYPAL_STEP_DEFINITIONS;
@@ -509,6 +515,15 @@ const PLUS_HOSTED_CHECKOUT_OAUTH_DELAY_MIN_SECONDS = 0;
 const PLUS_HOSTED_CHECKOUT_OAUTH_DELAY_MAX_SECONDS = 3600;
 const HOSTED_CHECKOUT_VERIFICATION_POPUP_DELAY_MIN_SECONDS = 0;
 const HOSTED_CHECKOUT_VERIFICATION_POPUP_DELAY_MAX_SECONDS = 60;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MIN = 1;
+const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MAX = 12;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 1;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MIN = 0;
+const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MAX = 5;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS = 1;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MIN_SECONDS = 0;
+const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MAX_SECONDS = 60;
+const DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS = 8;
 const OUTLOOK_ALIAS_DEFAULT_MAX_PER_ACCOUNT = 5;
 const OUTLOOK_ALIAS_MAX_PER_ACCOUNT_LIMIT = 50;
 const OUTLOOK_SUBSCRIPTION_USED_KEYWORD = 'ChatGPT Plus Subscription';
@@ -911,6 +926,9 @@ const PERSISTED_SETTING_DEFAULTS = {
   plusPaymentMethod: DEFAULT_PLUS_PAYMENT_METHOD,
   plusHostedCheckoutOauthDelaySeconds: 10,
   hostedCheckoutVerificationPopupDelaySeconds: 4,
+  hostedCheckoutVerificationPollBeforeResend: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND,
+  hostedCheckoutVerificationResendMaxAttempts: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS,
+  hostedCheckoutVerificationAfterResendWaitSeconds: DEFAULT_HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_SECONDS,
   hostedCheckoutVerificationUrl: 'https://mail.test.com/api/text-relay/eca_tr_xxxxxxxxx',
   hostedCheckoutPhoneNumber: '1234567890',
   hostedCheckoutSmsPoolText: '',
@@ -1023,6 +1041,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   cloudflareTempEmailLookupMode: DEFAULT_CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE,
   cloudflareTempEmailReceiveMailbox: '',
   cloudflareTempEmailUseRandomSubdomain: false,
+  cloudflareTempEmailUseEduSubdomain: false,
   cloudflareTempEmailDomain: '',
   cloudflareTempEmailDomains: [],
   cloudMailBaseUrl: '',
@@ -2483,6 +2502,9 @@ function normalizePanelMode(value = '') {
   if (normalized === 'local-cpa-json-no-rt') {
     return 'local-cpa-json-no-rt';
   }
+  if (normalized === 'cpa-no-rt') {
+    return 'cpa-no-rt';
+  }
   if (normalized === 'sub2api') {
     return 'sub2api';
   }
@@ -2675,6 +2697,7 @@ function getCloudflareTempEmailConfig(state = {}) {
     lookupMode: normalizeCloudflareTempEmailLookupMode(state.cloudflareTempEmailLookupMode),
     receiveMailbox: normalizeCloudflareTempEmailReceiveMailbox(state.cloudflareTempEmailReceiveMailbox),
     useRandomSubdomain: Boolean(state.cloudflareTempEmailUseRandomSubdomain),
+    useEduSubdomain: Boolean(state.cloudflareTempEmailUseEduSubdomain),
     domain: normalizeCloudflareTempEmailDomain(state.cloudflareTempEmailDomain),
     domains: normalizeCloudflareTempEmailDomains(state.cloudflareTempEmailDomains),
   };
@@ -2877,6 +2900,27 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeHostedCheckoutVerificationPopupDelaySeconds(
         value,
         PERSISTED_SETTING_DEFAULTS.hostedCheckoutVerificationPopupDelaySeconds
+      );
+    case 'hostedCheckoutVerificationPollBeforeResend':
+      return normalizeBoundedIntegerSetting(
+        value,
+        PERSISTED_SETTING_DEFAULTS.hostedCheckoutVerificationPollBeforeResend,
+        HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MIN,
+        HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND_MAX
+      );
+    case 'hostedCheckoutVerificationResendMaxAttempts':
+      return normalizeBoundedIntegerSetting(
+        value,
+        PERSISTED_SETTING_DEFAULTS.hostedCheckoutVerificationResendMaxAttempts,
+        HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MIN,
+        HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS_MAX
+      );
+    case 'hostedCheckoutVerificationAfterResendWaitSeconds':
+      return normalizeBoundedIntegerSetting(
+        value,
+        PERSISTED_SETTING_DEFAULTS.hostedCheckoutVerificationAfterResendWaitSeconds,
+        HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MIN_SECONDS,
+        HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MAX_SECONDS
       );
     case 'hostedCheckoutVerificationUrl':
       try {
@@ -3086,6 +3130,7 @@ function normalizePersistentSettingValue(key, value) {
     case 'autoDeleteUsedIcloudAlias':
     case 'accountRunHistoryTextEnabled':
     case 'cloudflareTempEmailUseRandomSubdomain':
+    case 'cloudflareTempEmailUseEduSubdomain':
       return Boolean(value);
     case 'icloudHostPreference':
       return normalizeIcloudHost(value) || 'auto';
@@ -8266,6 +8311,9 @@ function getPanelMode(state = {}) {
   if (state.panelMode === 'local-cpa-json-no-rt') {
     return 'local-cpa-json-no-rt';
   }
+  if (state.panelMode === 'cpa-no-rt') {
+    return 'cpa-no-rt';
+  }
   if (state.panelMode === 'sub2api') {
     return 'sub2api';
   }
@@ -8285,6 +8333,9 @@ function getPanelModeLabel(modeOrState) {
   }
   if (mode === 'local-cpa-json-no-rt') {
     return '本地CPA JSON 无RT';
+  }
+  if (mode === 'cpa-no-rt') {
+    return 'CPA 面板 无RT';
   }
   if (mode === 'sub2api') {
     return 'SUB2API';
@@ -10402,6 +10453,7 @@ const AUTO_RUN_BACKGROUND_COMPLETED_STEP_KEYS = new Set([
   'fetch-signup-code',
   'wait-registration-success',
   'local-cpa-json-export',
+  'cpa-session-import',
   'plus-checkout-billing',
   'paypal-approve',
   'plus-checkout-return',
@@ -13157,6 +13209,7 @@ const step6Executor = self.MultiPageBackgroundStep6?.createStep6Executor({
   buildLocalHelperEndpoint: (baseUrl, path) => buildHotmailLocalEndpoint(baseUrl, path),
   chrome,
   completeNodeFromBackground,
+  createCpaApi: self.MultiPageBackgroundCpaApi?.createCpaApi,
   createLocalCliProxyApi: self.MultiPageBackgroundLocalCliProxyApi?.createLocalCliProxyApi,
   ensureContentScriptReadyOnTab,
   getErrorMessage,
@@ -13386,6 +13439,7 @@ const stepExecutorsByKey = {
   'fill-profile': (state) => step5Executor.executeStep5(state),
   'wait-registration-success': (state) => step6Executor.executeStep6(state),
   'local-cpa-json-export': (state) => step6Executor.executeLocalCpaJsonNoRtExport(state),
+  'cpa-session-import': (state) => step6Executor.executeCpaSessionImportNoRt(state),
   'plus-checkout-create': (state) => plusCheckoutCreateExecutor.executePlusCheckoutCreate(state),
   'plus-checkout-billing': (state) => plusCheckoutBillingExecutor.executePlusCheckoutBilling(state),
   'gopay-subscription-confirm': (state) => goPayManualConfirmExecutor.executeGoPayManualConfirm(state),
@@ -13594,6 +13648,7 @@ const plusGpcStepRegistry = buildStepRegistry(PLUS_GPC_STEP_DEFINITIONS);
 const plusGpcPhoneStepRegistry = buildStepRegistry(PLUS_GPC_PHONE_STEP_DEFINITIONS);
 const plusGpcPhoneBoundEmailReloginStepRegistry = buildStepRegistry(PLUS_GPC_PHONE_BOUND_EMAIL_RELOGIN_STEP_DEFINITIONS);
 const localCpaJsonNoRtStepRegistry = buildStepRegistry(LOCAL_CPA_JSON_NO_RT_STEP_DEFINITIONS);
+const cpaNoRtStepRegistry = buildStepRegistry(CPA_NO_RT_STEP_DEFINITIONS);
 
 function getStepRegistryForState(state = {}) {
   const activeFlowId = String(state?.activeFlowId || DEFAULT_ACTIVE_FLOW_ID).trim().toLowerCase() || DEFAULT_ACTIVE_FLOW_ID;
@@ -13602,6 +13657,9 @@ function getStepRegistryForState(state = {}) {
   }
   if (getPanelMode(state) === 'local-cpa-json-no-rt') {
     return localCpaJsonNoRtStepRegistry;
+  }
+  if (getPanelMode(state) === 'cpa-no-rt') {
+    return cpaNoRtStepRegistry;
   }
   const signupMethod = getSignupMethodForStepDefinitions(state);
   const useBoundEmailRelogin = signupMethod === SIGNUP_METHOD_PHONE

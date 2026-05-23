@@ -23,6 +23,7 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   const goPaySteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gopay' });
   const gpcSteps = api.getSteps({ plusModeEnabled: true, plusPaymentMethod: 'gpc-helper' });
   const localCpaJsonNoRtSteps = api.getSteps({ panelMode: 'local-cpa-json-no-rt', plusModeEnabled: true });
+  const cpaNoRtSteps = api.getSteps({ panelMode: 'cpa-no-rt', plusModeEnabled: true });
 
   assert.equal(Array.isArray(steps), true);
   assert.equal(steps.length, 15);
@@ -237,6 +238,23 @@ test('step definitions module exposes ordered normal and Plus step metadata', ()
   assert.equal(localCpaJsonNoRtSteps[6].title, '导出本地CPA JSON');
   assert.deepStrictEqual(api.getStepIds({ panelMode: 'local-cpa-json-no-rt', plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7]);
   assert.equal(api.getLastStepId({ panelMode: 'local-cpa-json-no-rt', plusModeEnabled: true }), 7);
+
+  assert.deepStrictEqual(
+    cpaNoRtSteps.map((step) => step.key),
+    [
+      'open-chatgpt',
+      'submit-signup-email',
+      'fill-password',
+      'fetch-signup-code',
+      'fill-profile',
+      'plus-checkout-create',
+      'cpa-session-import',
+    ]
+  );
+  assert.equal(cpaNoRtSteps[5].title, '创建 Plus Checkout');
+  assert.equal(cpaNoRtSteps[6].title, '上传CPA无RT会话');
+  assert.deepStrictEqual(api.getStepIds({ panelMode: 'cpa-no-rt', plusModeEnabled: true }), [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(api.getLastStepId({ panelMode: 'cpa-no-rt', plusModeEnabled: true }), 7);
 });
 
 test('sidepanel html loads shared step definitions before sidepanel bootstrap', () => {

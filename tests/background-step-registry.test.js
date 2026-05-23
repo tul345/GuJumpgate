@@ -32,10 +32,13 @@ test('background imports node registry and shared workflow definitions', () => {
   assert.match(source, /plusGpcPhoneBoundEmailReloginStepRegistry/);
   assert.match(source, /const LOCAL_CPA_JSON_NO_RT_STEP_DEFINITIONS = self\.MultiPageStepDefinitions\?\.getSteps\?\.\(\{/);
   assert.match(source, /'local-cpa-json-export': \(state\) => step6Executor\.executeLocalCpaJsonNoRtExport\(state\)/);
+  assert.match(source, /const CPA_NO_RT_STEP_DEFINITIONS = self\.MultiPageStepDefinitions\?\.getSteps\?\.\(\{/);
+  assert.match(source, /'cpa-session-import': \(state\) => step6Executor\.executeCpaSessionImportNoRt\(state\)/);
   assert.match(source, /const localCpaJsonNoRtStepRegistry = buildStepRegistry\(LOCAL_CPA_JSON_NO_RT_STEP_DEFINITIONS\);/);
+  assert.match(source, /const cpaNoRtStepRegistry = buildStepRegistry\(CPA_NO_RT_STEP_DEFINITIONS\);/);
   assert.match(
     source,
-    /if \(getPanelMode\(state\) === 'local-cpa-json-no-rt'\) \{\s*return localCpaJsonNoRtStepRegistry;\s*\}\s*const signupMethod = getSignupMethodForStepDefinitions\(state\);/
+    /if \(getPanelMode\(state\) === 'local-cpa-json-no-rt'\) \{\s*return localCpaJsonNoRtStepRegistry;\s*\}\s*if \(getPanelMode\(state\) === 'cpa-no-rt'\) \{\s*return cpaNoRtStepRegistry;\s*\}\s*const signupMethod = getSignupMethodForStepDefinitions\(state\);/
   );
   assert.match(source, /const signupMethod = getSignupMethodForStepDefinitions\(state\);/);
   assert.match(source, /const useBoundEmailRelogin = signupMethod === SIGNUP_METHOD_PHONE/);

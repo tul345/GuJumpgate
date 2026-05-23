@@ -28,7 +28,7 @@ test('flow capability registry keeps OpenAI phone signup available only when run
   assert.equal(enabledState.effectiveSignupMethod, 'phone');
   assert.equal(enabledState.shouldWarnCpaPhoneSignup, true);
   assert.deepEqual(enabledState.effectiveSignupMethods, ['email', 'phone']);
-  assert.deepEqual(enabledState.supportedPanelModes, ['local-cpa-json', 'local-cpa-json-no-rt', 'cpa', 'sub2api', 'codex2api']);
+  assert.deepEqual(enabledState.supportedPanelModes, ['local-cpa-json', 'local-cpa-json-no-rt', 'cpa', 'cpa-no-rt', 'sub2api', 'codex2api']);
 
   const plusLockedState = registry.resolveSidepanelCapabilities({
     state: {
@@ -107,6 +107,26 @@ test('flow capability registry recognizes local cpa json no-rt as a supported lo
 
   assert.equal(capabilityState.panelMode, 'local-cpa-json-no-rt');
   assert.equal(capabilityState.canUseSelectedPanelMode, true);
+});
+
+test('flow capability registry recognizes cpa no-rt as a supported CPA upload mode', () => {
+  const api = loadApi();
+  const registry = api.createFlowCapabilityRegistry();
+
+  const capabilityState = registry.resolveSidepanelCapabilities({
+    state: {
+      activeFlowId: 'openai',
+      panelMode: 'cpa-no-rt',
+      phoneVerificationEnabled: true,
+      plusModeEnabled: false,
+      contributionMode: false,
+      signupMethod: 'phone',
+    },
+  });
+
+  assert.equal(capabilityState.panelMode, 'cpa-no-rt');
+  assert.equal(capabilityState.canUseSelectedPanelMode, true);
+  assert.equal(capabilityState.shouldWarnCpaPhoneSignup, false);
 });
 
 test('flow capability registry exposes shared auto-run validation for phone locks and panel support', () => {

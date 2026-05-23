@@ -48,6 +48,9 @@
       if (state.panelMode === 'local-cpa-json-no-rt') {
         return 'local-cpa-json-no-rt';
       }
+      if (state.panelMode === 'cpa-no-rt') {
+        return 'cpa-no-rt';
+      }
       if (state.panelMode === 'sub2api') {
         return 'sub2api';
       }
@@ -64,6 +67,9 @@
       }
       if (mode === 'local-cpa-json-no-rt') {
         return '本地CPA JSON 无RT';
+      }
+      if (mode === 'cpa-no-rt') {
+        return 'CPA 面板 无RT';
       }
       if (mode === 'sub2api') {
         return 'SUB2API';

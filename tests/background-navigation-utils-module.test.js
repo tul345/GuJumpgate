@@ -87,6 +87,8 @@ test('navigation utils expose local cpa json panel mode label', () => {
   assert.equal(utils.getPanelModeLabel('local-cpa-json'), '本地CPA JSON 有RT');
   assert.equal(utils.getPanelMode({ panelMode: 'local-cpa-json-no-rt' }), 'local-cpa-json-no-rt');
   assert.equal(utils.getPanelModeLabel('local-cpa-json-no-rt'), '本地CPA JSON 无RT');
+  assert.equal(utils.getPanelMode({ panelMode: 'cpa-no-rt' }), 'cpa-no-rt');
+  assert.equal(utils.getPanelModeLabel('cpa-no-rt'), 'CPA 面板 无RT');
 });
 
 test('navigation utils leaves SUB2API url empty when no default is configured', () => {

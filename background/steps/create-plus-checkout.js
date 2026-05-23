@@ -21,8 +21,7 @@
   const HOSTED_CHECKOUT_PAYPAL_LOOP_TIMEOUT_MS = 10 * 60 * 1000;
   const HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS = 12;
   const HOSTED_CHECKOUT_VERIFICATION_POLL_INTERVAL_MS = 5000;
-  const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 3;
-  const HOSTED_CHECKOUT_VERIFICATION_REFETCH_BEFORE_RESEND = 3;
+  const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 1;
   const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS = 1;
   const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS = 8000;
   const HOSTED_CHECKOUT_PAYPAL_DEFAULT_PHONE = '1234567890';
@@ -105,6 +104,19 @@
       return /paypal\.com\/webapps\/hermes/i.test(String(url || ''));
     }
 
+    function normalizeHostedCheckoutIntegerSetting(value, fallback, min, max) {
+      const rawValue = String(value ?? '').trim();
+      const numeric = Number(rawValue);
+      const fallbackNumeric = Number(fallback);
+      const normalizedFallback = Number.isFinite(fallbackNumeric)
+        ? Math.min(max, Math.max(min, Math.floor(fallbackNumeric)))
+        : min;
+      if (!rawValue || !Number.isFinite(numeric)) {
+        return normalizedFallback;
+      }
+      return Math.min(max, Math.max(min, Math.floor(numeric)));
+    }
+
     async function getHostedCheckoutRuntimeConfig() {
       const state = typeof getState === 'function' ? await getState().catch(() => ({})) : {};
       let stored = {};
@@ -113,6 +125,9 @@
           'hostedCheckoutVerificationUrl',
           'hostedCheckoutPhoneNumber',
           'hostedCheckoutVerificationPopupDelaySeconds',
+          'hostedCheckoutVerificationPollBeforeResend',
+          'hostedCheckoutVerificationResendMaxAttempts',
+          'hostedCheckoutVerificationAfterResendWaitSeconds',
         ]).catch(() => ({}));
       }
       const verificationUrl = String(
@@ -127,15 +142,41 @@
         || HOSTED_CHECKOUT_PAYPAL_DEFAULT_PHONE
         || ''
       ).trim();
-      const popupDelaySeconds = Math.min(60, Math.max(0, Math.floor(Number(
+      const popupDelaySeconds = normalizeHostedCheckoutIntegerSetting(
         stored?.hostedCheckoutVerificationPopupDelaySeconds
-        ?? state?.hostedCheckoutVerificationPopupDelaySeconds
-        ?? 4
-      ) || 4)));
+          ?? state?.hostedCheckoutVerificationPopupDelaySeconds,
+        4,
+        0,
+        60
+      );
+      const pollBeforeResend = normalizeHostedCheckoutIntegerSetting(
+        stored?.hostedCheckoutVerificationPollBeforeResend
+          ?? state?.hostedCheckoutVerificationPollBeforeResend,
+        HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND,
+        1,
+        HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS
+      );
+      const resendMaxAttempts = normalizeHostedCheckoutIntegerSetting(
+        stored?.hostedCheckoutVerificationResendMaxAttempts
+          ?? state?.hostedCheckoutVerificationResendMaxAttempts,
+        HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS,
+        0,
+        5
+      );
+      const afterResendWaitSeconds = normalizeHostedCheckoutIntegerSetting(
+        stored?.hostedCheckoutVerificationAfterResendWaitSeconds
+          ?? state?.hostedCheckoutVerificationAfterResendWaitSeconds,
+        Math.round(HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS / 1000),
+        0,
+        60
+      );
       return {
         verificationUrl,
         phone,
         popupDelaySeconds,
+        pollBeforeResend,
+        resendMaxAttempts,
+        afterResendWaitMs: afterResendWaitSeconds * 1000,
       };
     }
 
@@ -751,24 +792,26 @@
 
         const pageState = await getHostedCheckoutPayPalState(tabId);
         if (pageState.hostedStage === 'verification' && pageState.verificationInputsVisible) {
+          const runtimeConfig = await getHostedCheckoutRuntimeConfig();
+          const pollBeforeResend = Math.max(1, Number(runtimeConfig?.pollBeforeResend) || HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND);
+          const resendMaxAttempts = Math.max(0, Number(runtimeConfig?.resendMaxAttempts) || 0);
+          const afterResendWaitMs = Math.max(0, Number(runtimeConfig?.afterResendWaitMs) || 0);
+          const canRequestResend = hostedVerificationResendCount < resendMaxAttempts
+            && pageState.verificationResendReady !== false;
           if (pageState.verificationErrorVisible && submittedHostedVerificationCodes.size > 0) {
-            if (
-              submittedHostedVerificationCodes.size >= HOSTED_CHECKOUT_VERIFICATION_REFETCH_BEFORE_RESEND
-              && hostedVerificationResendCount < HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS
-            ) {
-              await addLog(`Step 6: PayPal rejected ${submittedHostedVerificationCodes.size} fetched codes; clicking Resend once and then fetching the next latest code.`, 'warn');
+            if (canRequestResend) {
+              await addLog(`Step 6: PayPal rejected the submitted verification code; clicking Resend immediately (${hostedVerificationResendCount + 1}/${resendMaxAttempts}).`, 'warn');
               await runHostedCheckoutPayPalStep(tabId, {
                 resendVerification: true,
               });
               hostedVerificationResendCount += 1;
               hostedVerificationAfterMs = Date.now();
-              await sleepWithStop(HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS);
+              await sleepWithStop(afterResendWaitMs);
               continue;
             }
             await addLog('Step 6: PayPal says the submitted code is invalid/expired; fetching the latest code again and excluding submitted codes.', 'warn');
           }
 
-          const runtimeConfig = await getHostedCheckoutRuntimeConfig();
           const popupDelayMs = Math.max(0, Number(runtimeConfig?.popupDelaySeconds || 0) * 1000);
           if (popupDelayMs > 0) {
             await addLog(`Step 6: waiting ${Math.round(popupDelayMs / 1000)}s after verification popup before fetching latest code.`, 'info');
@@ -781,21 +824,21 @@
             verificationCode = await pollHostedCheckoutVerificationCode({
               afterMs: hostedVerificationAfterMs,
               excludedCodes: [...submittedHostedVerificationCodes],
-              maxAttempts: hostedVerificationResendCount < HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS
-                ? HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND
+              maxAttempts: hostedVerificationResendCount < resendMaxAttempts
+                ? pollBeforeResend
                 : HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS,
             });
           } catch (pollError) {
-            if (hostedVerificationResendCount >= HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS) {
+            if (hostedVerificationResendCount >= resendMaxAttempts) {
               throw pollError;
             }
-            await addLog(`Step 6: no fresh PayPal verification code after ${HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND} polls; clicking Resend once and retrying.`, 'warn');
+            await addLog(`Step 6: no fresh PayPal verification code after ${pollBeforeResend} polls; clicking Resend (${hostedVerificationResendCount + 1}/${resendMaxAttempts}) and retrying.`, 'warn');
             await runHostedCheckoutPayPalStep(tabId, {
               resendVerification: true,
             });
             hostedVerificationResendCount += 1;
             hostedVerificationAfterMs = Date.now();
-            await sleepWithStop(HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS);
+            await sleepWithStop(afterResendWaitMs);
             continue;
           }
           submittedHostedVerificationCodes.add(verificationCode);
