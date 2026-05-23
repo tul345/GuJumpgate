@@ -788,6 +788,51 @@ header {
   justify-content: flex-end;
 }
 
+.mihomo-network-card {
+  gap: 10px;
+}
+
+.mihomo-network-card .section-mini-header {
+  align-items: flex-start;
+}
+
+.mihomo-auto-toggle {
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.mihomo-network-card .data-row {
+  align-items: center;
+}
+
+.mihomo-network-card .data-label {
+  width: 88px;
+}
+
+.mihomo-network-card .data-inline > .data-input {
+  min-width: 0;
+}
+
+.mihomo-network-card .auto-network-import-actions {
+  justify-content: flex-start;
+}
+
+@media (max-width: 540px) {
+  .mihomo-network-card .section-mini-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mihomo-network-card .data-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mihomo-network-card .data-label {
+    width: auto;
+  }
+}
+
 .data-row {
   display: flex;
   align-items: center;

@@ -1,8 +1,8 @@
 // background/mihomo-controller.js - Mihomo/Clash external-controller helpers.
 
-const DEFAULT_MIHOMO_CONTROLLER_URL = 'http://127.0.0.1:9090';
+const DEFAULT_MIHOMO_CONTROLLER_URL = 'http://127.0.0.1:9097';
 const DEFAULT_MIHOMO_LOCAL_PROXY_HOST = '127.0.0.1';
-const DEFAULT_MIHOMO_LOCAL_PROXY_PORT = '7890';
+const DEFAULT_MIHOMO_LOCAL_PROXY_PORT = '7897';
 const DEFAULT_MIHOMO_GROUP_NAME = 'GLOBAL';
 const DEFAULT_MIHOMO_SIGNUP_KEYWORD = '日本,JP,Japan';
 const DEFAULT_MIHOMO_CHECKOUT_KEYWORD = '美国,US,USA,United States';

@@ -765,6 +765,71 @@
         </div>
       </div>
     </div>
+    <div id="mihomo-network-section" class="data-card hotmail-card mihomo-network-card">
+      <div class="section-mini-header">
+        <div class="section-mini-copy">
+          <span class="section-label">机场节点</span>
+          <span class="data-value">Clash Verge / Mihomo 外部控制器</span>
+        </div>
+        <label class="toggle-switch mihomo-auto-toggle" for="input-auto-network-switch-enabled"
+          title="打开后自动运行会在注册阶段切 JP，第 6 步切 US；关闭后只保留手动切换">
+          <input type="checkbox" id="input-auto-network-switch-enabled" />
+          <span class="toggle-switch-track" aria-hidden="true">
+            <span class="toggle-switch-thumb"></span>
+          </span>
+          <span class="data-unit">自动切换</span>
+        </label>
+      </div>
+      <div class="data-row" id="row-auto-network-mihomo-enabled" style="display:none;">
+        <span class="data-label">Mihomo</span>
+        <input type="checkbox" id="input-auto-network-mihomo-enabled" checked hidden />
+      </div>
+      <div class="data-row">
+        <span class="data-label">控制器</span>
+        <input type="text" id="input-auto-network-mihomo-controller-url" class="data-input mono"
+          placeholder="http://127.0.0.1:9097" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">Secret</span>
+        <input type="password" id="input-auto-network-mihomo-secret" class="data-input mono"
+          placeholder="set-your-secret" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">本机代理</span>
+        <div class="data-inline">
+          <input type="text" id="input-auto-network-mihomo-local-proxy-host" class="data-input mono"
+            placeholder="127.0.0.1" />
+          <input type="number" id="input-auto-network-mihomo-local-proxy-port" class="data-input"
+            min="1" max="65535" step="1" placeholder="7897" />
+        </div>
+      </div>
+      <div class="data-row">
+        <span class="data-label">注册分组</span>
+        <input type="text" id="input-auto-network-mihomo-signup-group" class="data-input mono" placeholder="GLOBAL" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">注册关键词</span>
+        <input type="text" id="input-auto-network-mihomo-signup-keyword" class="data-input mono"
+          placeholder="日本,JP,Japan" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">支付分组</span>
+        <input type="text" id="input-auto-network-mihomo-checkout-group" class="data-input mono" placeholder="GLOBAL" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">支付关键词</span>
+        <input type="text" id="input-auto-network-mihomo-checkout-keyword" class="data-input mono"
+          placeholder="美国,US,USA" />
+      </div>
+      <div class="data-row">
+        <span class="data-label">操作</span>
+        <div class="data-inline auto-network-import-actions">
+          <button id="btn-auto-network-mihomo-test" class="btn btn-outline btn-xs" type="button">测试</button>
+          <button id="btn-auto-network-mihomo-switch-signup" class="btn btn-ghost btn-xs" type="button">切 JP</button>
+          <button id="btn-auto-network-mihomo-switch-checkout" class="btn btn-ghost btn-xs" type="button">切 US</button>
+        </div>
+      </div>
+    </div>
     <div id="cloudflare-temp-email-section" class="data-card hotmail-card" style="display:none;">
       <div class="section-mini-header">
         <div class="section-mini-copy">
@@ -1335,48 +1400,6 @@
                   <div class="data-row ip-proxy-column-row" id="row-auto-network-switch" style="display:none;">
                     <span class="data-label">阶段节点池</span>
                     <div class="stacked-fields">
-                      <label class="toggle-switch" for="input-auto-network-switch-enabled" title="自动运行时，注册阶段使用 JP 池，第 6 步使用 US 池">
-                        <input type="checkbox" id="input-auto-network-switch-enabled" />
-                        <span class="toggle-switch-track" aria-hidden="true">
-                          <span class="toggle-switch-thumb"></span>
-                        </span>
-                      </label>
-                      <label class="toggle-switch" for="input-auto-network-mihomo-enabled" title="使用 Clash Verge / Mihomo 外部控制器切换机场节点">
-                        <input type="checkbox" id="input-auto-network-mihomo-enabled" />
-                        <span class="toggle-switch-track" aria-hidden="true">
-                          <span class="toggle-switch-thumb"></span>
-                        </span>
-                        <span class="data-unit">Mihomo/Clash</span>
-                      </label>
-                      <div class="data-inline">
-                        <input type="text" id="input-auto-network-mihomo-controller-url" class="data-input mono"
-                          placeholder="控制器 http://127.0.0.1:9090" />
-                        <input type="password" id="input-auto-network-mihomo-secret" class="data-input mono"
-                          placeholder="Secret 可空" />
-                      </div>
-                      <div class="data-inline">
-                        <input type="text" id="input-auto-network-mihomo-local-proxy-host" class="data-input mono"
-                          placeholder="本机代理 127.0.0.1" />
-                        <input type="number" id="input-auto-network-mihomo-local-proxy-port" class="data-input"
-                          min="1" max="65535" step="1" placeholder="7890" />
-                      </div>
-                      <div class="data-inline">
-                        <input type="text" id="input-auto-network-mihomo-signup-group" class="data-input mono"
-                          placeholder="注册分组，例如 GLOBAL" />
-                        <input type="text" id="input-auto-network-mihomo-signup-keyword" class="data-input mono"
-                          placeholder="日本,JP,Japan" />
-                      </div>
-                      <div class="data-inline">
-                        <input type="text" id="input-auto-network-mihomo-checkout-group" class="data-input mono"
-                          placeholder="支付分组，例如 GLOBAL" />
-                        <input type="text" id="input-auto-network-mihomo-checkout-keyword" class="data-input mono"
-                          placeholder="美国,US,USA" />
-                      </div>
-                      <div class="data-inline auto-network-import-actions">
-                        <button id="btn-auto-network-mihomo-test" class="btn btn-outline btn-xs" type="button">测试 Clash</button>
-                        <button id="btn-auto-network-mihomo-switch-signup" class="btn btn-ghost btn-xs" type="button">切 JP</button>
-                        <button id="btn-auto-network-mihomo-switch-checkout" class="btn btn-ghost btn-xs" type="button">切 US</button>
-                      </div>
                       <textarea id="input-auto-network-signup-proxy-list" class="data-textarea mono"
                         placeholder="注册 JP 池：每行 host:port:user:pass"></textarea>
                       <div class="data-inline auto-network-import-actions">

@@ -1424,7 +1424,6 @@ function updateIpProxyUI(state = latestState) {
   if (typeof inputAutoNetworkSwitchMaxAttempts !== 'undefined' && inputAutoNetworkSwitchMaxAttempts) {
     inputAutoNetworkSwitchMaxAttempts.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
   }
-  const autoNetworkMihomoEnabled = Boolean(typeof inputAutoNetworkMihomoEnabled !== 'undefined' && inputAutoNetworkMihomoEnabled?.checked);
   [
     typeof inputAutoNetworkMihomoEnabled !== 'undefined' ? inputAutoNetworkMihomoEnabled : null,
     typeof inputAutoNetworkMihomoControllerUrl !== 'undefined' ? inputAutoNetworkMihomoControllerUrl : null,
@@ -1440,11 +1439,7 @@ function updateIpProxyUI(state = latestState) {
     typeof btnAutoNetworkMihomoSwitchCheckout !== 'undefined' ? btnAutoNetworkMihomoSwitchCheckout : null,
   ].forEach((control) => {
     if (!control) return;
-    if (control === inputAutoNetworkMihomoEnabled) {
-      control.disabled = !enabled || !isAccountMode || !autoNetworkEnabled;
-      return;
-    }
-    control.disabled = !enabled || !isAccountMode || !autoNetworkEnabled || !autoNetworkMihomoEnabled;
+    control.disabled = false;
   });
   const autoSyncEnabledInput = typeof inputIpProxyAutoSyncEnabled !== 'undefined' ? inputIpProxyAutoSyncEnabled : null;
   const autoSyncIntervalInput = typeof inputIpProxyAutoSyncIntervalMinutes !== 'undefined' ? inputIpProxyAutoSyncIntervalMinutes : null;

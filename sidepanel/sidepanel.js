@@ -4140,13 +4140,13 @@ function collectSettingsPayload() {
         ? inputAutoNetworkSwitchMaxAttempts.value
         : latestState?.autoNetworkSwitchMaxAttempts || 3
     ).trim(), 10) || 3))),
-    autoNetworkMihomoEnabled: Boolean(inputAutoNetworkMihomoEnabled?.checked),
-    autoNetworkMihomoControllerUrl: String(inputAutoNetworkMihomoControllerUrl?.value || latestState?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9090').trim(),
+    autoNetworkMihomoEnabled: true,
+    autoNetworkMihomoControllerUrl: String(inputAutoNetworkMihomoControllerUrl?.value || latestState?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9097').trim(),
     autoNetworkMihomoSecret: String(inputAutoNetworkMihomoSecret?.value || latestState?.autoNetworkMihomoSecret || '').trim(),
     autoNetworkMihomoLocalProxyHost: String(inputAutoNetworkMihomoLocalProxyHost?.value || latestState?.autoNetworkMihomoLocalProxyHost || '127.0.0.1').trim(),
     autoNetworkMihomoLocalProxyPort: String(Math.max(1, Math.min(65535, Number.parseInt(String(
-      inputAutoNetworkMihomoLocalProxyPort?.value || latestState?.autoNetworkMihomoLocalProxyPort || 7890
-    ).trim(), 10) || 7890))),
+      inputAutoNetworkMihomoLocalProxyPort?.value || latestState?.autoNetworkMihomoLocalProxyPort || 7897
+    ).trim(), 10) || 7897))),
     autoNetworkMihomoSignupGroup: String(inputAutoNetworkMihomoSignupGroup?.value || latestState?.autoNetworkMihomoSignupGroup || 'GLOBAL').trim(),
     autoNetworkMihomoCheckoutGroup: String(inputAutoNetworkMihomoCheckoutGroup?.value || latestState?.autoNetworkMihomoCheckoutGroup || 'GLOBAL').trim(),
     autoNetworkMihomoSignupKeyword: String(inputAutoNetworkMihomoSignupKeyword?.value || latestState?.autoNetworkMihomoSignupKeyword || '日本,JP,Japan').trim(),
@@ -9760,7 +9760,7 @@ function applySettingsState(state) {
     inputAutoNetworkMihomoEnabled.checked = Boolean(state?.autoNetworkMihomoEnabled);
   }
   if (inputAutoNetworkMihomoControllerUrl) {
-    inputAutoNetworkMihomoControllerUrl.value = String(state?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9090');
+    inputAutoNetworkMihomoControllerUrl.value = String(state?.autoNetworkMihomoControllerUrl || 'http://127.0.0.1:9097');
   }
   if (inputAutoNetworkMihomoSecret) {
     inputAutoNetworkMihomoSecret.value = String(state?.autoNetworkMihomoSecret || '');
@@ -9769,7 +9769,7 @@ function applySettingsState(state) {
     inputAutoNetworkMihomoLocalProxyHost.value = String(state?.autoNetworkMihomoLocalProxyHost || '127.0.0.1');
   }
   if (inputAutoNetworkMihomoLocalProxyPort) {
-    inputAutoNetworkMihomoLocalProxyPort.value = String(state?.autoNetworkMihomoLocalProxyPort || '7890');
+    inputAutoNetworkMihomoLocalProxyPort.value = String(state?.autoNetworkMihomoLocalProxyPort || '7897');
   }
   if (inputAutoNetworkMihomoSignupGroup) {
     inputAutoNetworkMihomoSignupGroup.value = String(state?.autoNetworkMihomoSignupGroup || 'GLOBAL');
@@ -14450,7 +14450,7 @@ inputAutoNetworkMihomoLocalProxyPort?.addEventListener('input', () => {
 });
 inputAutoNetworkMihomoLocalProxyPort?.addEventListener('blur', () => {
   const port = Number.parseInt(String(inputAutoNetworkMihomoLocalProxyPort.value || '').trim(), 10);
-  inputAutoNetworkMihomoLocalProxyPort.value = String(Math.max(1, Math.min(65535, Number.isFinite(port) ? port : 7890)));
+  inputAutoNetworkMihomoLocalProxyPort.value = String(Math.max(1, Math.min(65535, Number.isFinite(port) ? port : 7897)));
   saveSettings({ silent: true }).catch(() => {});
 });
 
