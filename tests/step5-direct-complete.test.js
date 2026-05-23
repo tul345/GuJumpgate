@@ -58,6 +58,9 @@ function getStep5OutcomeBundle() {
     extractFunction('isStep5ProfilePageUrl'),
     extractFunction('getStep5AuthRetryPageState'),
     extractFunction('getStep5SubmitButton'),
+    extractFunction('getStep5ChatGptOnboardingPurposeState'),
+    extractFunction('findStep5OnboardingPurposeSkipButton'),
+    extractFunction('skipStep5OnboardingPurposeIfPresent'),
     extractFunction('waitForStep5SubmitButton'),
     extractFunction('isStep5SubmitButtonClickable'),
     extractFunction('isStep5ProfileStillVisible'),
@@ -277,6 +280,114 @@ return {
     snapshot.logs.some(({ message }) => /资料提交结果已确认/.test(message)),
     '日志应明确说明 Step 5 已完成提交后检测'
   );
+});
+
+test('step 5 skips ChatGPT purpose onboarding when it appears after age fill', async () => {
+  const api = new Function(`
+const logs = [];
+const completions = [];
+let skipClicked = false;
+const nameInput = { value: '', hidden: false };
+const ageInput = { value: '', hidden: false };
+const skipButton = {
+  tagName: 'BUTTON',
+  textContent: '\\u8df3\\u8fc7',
+  hidden: false,
+  disabled: false,
+  getAttribute() { return ''; },
+};
+const location = { href: 'https://auth.openai.com/u/signup/profile' };
+const document = {
+  body: {
+    get innerText() {
+      return /^https:\\/\\/chatgpt\\.com\\//.test(location.href)
+        ? '\\u662f\\u4ec0\\u4e48\\u4fc3\\u4f7f\\u4f60\\u4f7f\\u7528 ChatGPT? \\u5b66\\u6821 \\u5de5\\u4f5c \\u4e2a\\u4eba\\u4efb\\u52a1 \\u4e50\\u8da3\\u548c\\u5a31\\u4e50 \\u5176\\u4ed6 \\u8df3\\u8fc7'
+        : '';
+    },
+    textContent: '',
+  },
+  querySelector(selector) {
+    switch (selector) {
+      case '[role="spinbutton"][data-type="year"]':
+      case '[role="spinbutton"][data-type="month"]':
+      case '[role="spinbutton"][data-type="day"]':
+      case 'input[name="birthday"]':
+        return null;
+      case 'input[name="age"]':
+        return /^https:\\/\\/auth\\.openai\\.com\\//.test(location.href) ? ageInput : null;
+      default:
+        return null;
+    }
+  },
+  querySelectorAll(selector) {
+    if (selector === 'input[name="allCheckboxes"][type="checkbox"]') return [];
+    if (selector === 'input[type="checkbox"]') return [];
+    if (/button/.test(selector) && /^https:\\/\\/chatgpt\\.com\\//.test(location.href)) return [skipButton];
+    return [];
+  },
+  execCommand() {},
+};
+
+function log(message, level = 'info') { logs.push({ message, level }); }
+function throwIfStopped() {}
+async function waitForElement() { return nameInput; }
+async function humanPause() {}
+async function sleep() {}
+function fillInput(input, value) {
+  input.value = value;
+  if (input === ageInput) location.href = 'https://chatgpt.com/';
+}
+function findBirthdayReactAriaSelect() { return null; }
+function isVisibleElement(el) { return Boolean(el) && !el.hidden; }
+function isActionEnabled(el) { return Boolean(el) && !el.disabled && el.getAttribute?.('aria-disabled') !== 'true'; }
+function getActionText(el) { return el.textContent || ''; }
+async function setReactAriaBirthdaySelect() { throw new Error('setReactAriaBirthdaySelect should not run'); }
+async function waitForElementByText() { throw new Error('purpose page should be skipped before submit lookup'); }
+function simulateClick(el) { if (el === skipButton) skipClicked = true; }
+function reportComplete(step, payload) { completions.push({ step, payload }); }
+function normalizeInlineText(text) { return String(text || '').replace(/\\s+/g, ' ').trim(); }
+function getPageTextSnapshot() { return document.body.innerText; }
+function getSignupAuthRetryPathPatterns() { return []; }
+function getAuthTimeoutErrorPageState() { return null; }
+async function recoverCurrentAuthRetryPage() { throw new Error('should not recover retry page'); }
+function createSignupUserAlreadyExistsError() { return new Error('user already exists'); }
+function createAuthMaxCheckAttemptsError() { return new Error('max_check_attempts'); }
+function getStep5ErrorText() { return ''; }
+function isStep5Ready() { return /^https:\\/\\/auth\\.openai\\.com\\//.test(location.href); }
+function isLikelyLoggedInChatgptHomeUrl() { return /^https:\\/\\/chatgpt\\.com\\//.test(location.href); }
+function isOAuthConsentPage() { return false; }
+function isAddPhonePageReady() { return false; }
+
+${getStep5Bundle()}
+
+return {
+  run() {
+    return step5_fillNameBirthday({
+      firstName: 'Mia',
+      lastName: 'Harris',
+      age: 19,
+    });
+  },
+  snapshot() {
+    return { logs, completions, skipClicked, nameValue: nameInput.value, ageValue: ageInput.value };
+  },
+};
+`)();
+
+  const result = await api.run();
+  const snapshot = api.snapshot();
+
+  assert.deepStrictEqual(result, {
+    profileSubmitted: true,
+    postSubmitChecked: true,
+    ageMode: true,
+    outcome: 'onboarding_purpose_skipped',
+    url: 'https://chatgpt.com/',
+  });
+  assert.equal(snapshot.skipClicked, true);
+  assert.equal(snapshot.nameValue, 'Mia Harris');
+  assert.equal(snapshot.ageValue, '19');
+  assert.deepStrictEqual(snapshot.completions, [{ step: 5, payload: result }]);
 });
 
 test('step 5 routes profile fill and submit operations through operation delay', async () => {

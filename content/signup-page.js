@@ -6581,8 +6581,93 @@ function getStep5SubmitButton() {
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
+    if (/next|\u4e0b\u4e00\u6b65/i.test(text)) {
+      return true;
+    }
     return /完成|创建|create|continue|finish|done|agree/i.test(text);
   }) || null;
+}
+
+
+function getStep5ChatGptOnboardingPurposeState() {
+  try {
+    const parsed = new URL(String(location.href || '').trim());
+    const host = String(parsed.hostname || '').toLowerCase();
+    if (!['chatgpt.com', 'www.chatgpt.com', 'chat.openai.com'].includes(host)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const pageText = (
+    typeof getPageTextSnapshot === 'function'
+      ? getPageTextSnapshot()
+      : String(document?.body?.innerText || document?.body?.textContent || '')
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!pageText) {
+    return null;
+  }
+
+  const hasPurposeTitle = /what\s+brings\s+you\s+to\s+chatgpt|what\s+brings\s+you\s+here|\u662f\u4ec0\u4e48\u4fc3\u4f7f\u4f60\u4f7f\u7528\s*ChatGPT/i.test(pageText);
+  const hasPurposeOptions = /school|work|personal\s+tasks|fun\s+and\s+entertainment|\u5b66\u6821|\u5de5\u4f5c|\u4e2a\u4eba\u4efb\u52a1|\u4e50\u8da3\u548c\u5a31\u4e50|\u5176\u4ed6/i.test(pageText);
+  if (!hasPurposeTitle && !hasPurposeOptions) {
+    return null;
+  }
+
+  return {
+    state: 'onboarding_purpose',
+    url: location.href,
+  };
+}
+
+function findStep5OnboardingPurposeSkipButton() {
+  const candidates = document.querySelectorAll(
+    'button, [role="button"], a, [role="link"], input[type="button"], input[type="submit"]'
+  );
+
+  return Array.from(candidates).find((el) => {
+    if (!isVisibleElement(el) || !isActionEnabled(el)) return false;
+    const text = typeof getActionText === 'function'
+      ? getActionText(el)
+      : [
+        el?.textContent,
+        el?.value,
+        el?.getAttribute?.('aria-label'),
+        el?.getAttribute?.('title'),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return /skip|\u8df3\u8fc7/i.test(text);
+  }) || null;
+}
+
+async function skipStep5OnboardingPurposeIfPresent() {
+  const purposeState = getStep5ChatGptOnboardingPurposeState();
+  if (!purposeState) {
+    return null;
+  }
+
+  const skipButton = findStep5OnboardingPurposeSkipButton();
+  if (!skipButton) {
+    log('Step 5: ChatGPT onboarding purpose page detected, but no Skip button was found; treating profile as complete.', 'warn');
+    return purposeState;
+  }
+
+  log('Step 5: ChatGPT onboarding purpose page detected; clicking Skip.', 'info');
+  await humanPause(350, 900);
+  simulateClick(skipButton);
+  await sleep(1000);
+
+  return {
+    state: 'onboarding_purpose_skipped',
+    url: location.href,
+  };
 }
 
 async function waitForStep5SubmitButton(timeout = 5000) {
@@ -6697,15 +6782,7 @@ function getStep5PostSubmitSuccessState() {
   }
 
   if (!isStep5ProfileStillVisible()) {
-    try {
-      const parsed = new URL(String(location.href || '').trim());
-      const host = String(parsed.hostname || '').toLowerCase();
-      if (['auth.openai.com', 'auth0.openai.com', 'accounts.openai.com'].includes(host)) {
-        return null;
-      }
-    } catch {
-      // Fall through to the generic "left_profile" success state.
-    }
+    // 资料页已消失，无论在哪个域名都算成功
     return {
       state: 'left_profile',
       url: location.href,
@@ -6821,6 +6898,11 @@ async function waitForStep5SubmitOutcome(options = {}) {
       });
       lastSubmitClickAt = Date.now();
       continue;
+    }
+
+    const onboardingPurposeState = await skipStep5OnboardingPurposeIfPresent();
+    if (onboardingPurposeState) {
+      return onboardingPurposeState;
     }
 
     const successState = getStep5PostSubmitSuccessState();
@@ -7111,14 +7193,6 @@ async function step5_fillNameBirthday(payload) {
     return { prefilled: true };
   }
 
-  // Click "完成帐户创建" button
-  await sleep(500);
-  const completeBtn = await waitForStep5SubmitButton(5000)
-    || await waitForElementByText('button', /完成|create|continue|finish|done|agree/i, 5000).catch(() => null);
-  if (!completeBtn) {
-    throw new Error('未找到“完成帐户创建”按钮。URL: ' + location.href);
-  }
-
   const isAgeMode = !birthdayMode && Boolean(ageInput);
   if (isAgeMode) {
     log('步骤 5：当前为年龄输入模式，点击“完成帐户创建”后将等待页面结果。', 'info');
@@ -7138,6 +7212,21 @@ async function step5_fillNameBirthday(payload) {
     reportedCompletionPayload = completionPayload;
     reportComplete(5, completionPayload);
     return completionPayload;
+  }
+
+  const preSubmitOnboardingPurposeState = await skipStep5OnboardingPurposeIfPresent();
+  if (preSubmitOnboardingPurposeState) {
+    const completionPayload = completeStep5Once({ outcome: preSubmitOnboardingPurposeState });
+    log('Step 5: onboarding purpose page skipped; profile is complete.', 'ok');
+    return completionPayload;
+  }
+
+  // Click "完成帐户创建" button
+  await sleep(500);
+  const completeBtn = await waitForStep5SubmitButton(5000)
+    || await waitForElementByText('button', /完成|create|continue|next|finish|done|agree|\u4e0b\u4e00\u6b65/i, 5000).catch(() => null);
+  if (!completeBtn) {
+    throw new Error('未找到“完成帐户创建”按钮。URL: ' + location.href);
   }
 
   const cleanupNavigationReporter = installStep5NavigationCompletionReporter(completeStep5Once);

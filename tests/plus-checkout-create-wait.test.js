@@ -465,6 +465,388 @@ test('hosted checkout automation completes plus-checkout-create after success pa
   });
 });
 
+test('hosted checkout verification fetch requests fresh unsubmitted code', async () => {
+  const fetchUrls = [];
+  const executor = api.createPlusCheckoutCreateExecutor({
+    addLog: async () => {},
+    chrome: {
+      storage: {
+        local: {
+          get: async () => ({
+            hostedCheckoutPhoneNumber: '(582) 453-7767',
+          }),
+        },
+      },
+    },
+    fetch: async (url) => {
+      fetchUrls.push(url);
+      return {
+        text: async () => JSON.stringify({
+          messages: [
+            { text: 'PayPal code 111111' },
+            { text: 'PayPal code 222222' },
+          ],
+        }),
+      };
+    },
+    getState: async () => ({}),
+  });
+
+  const result = await executor.fetchHostedCheckoutVerificationCodeManually({
+    verificationUrl: 'https://relay.example/latest',
+    afterMs: 1779278239020,
+    excludedCodes: ['111111'],
+  });
+
+  assert.equal(result.code, '222222');
+  const requestedUrl = new URL(fetchUrls[0]);
+  assert.equal(requestedUrl.origin + requestedUrl.pathname, 'https://relay.example/latest');
+  assert.equal(requestedUrl.searchParams.get('phone'), '(582) 453-7767');
+  assert.equal(requestedUrl.searchParams.get('after_ms'), '1779278239020');
+  assert.equal(requestedUrl.searchParams.get('exclude_codes'), '111111');
+  assert.ok(requestedUrl.searchParams.get('t'));
+});
+
+test('hosted checkout verification falls back when relay rejects filter params', async () => {
+  const fetchUrls = [];
+  const executor = api.createPlusCheckoutCreateExecutor({
+    addLog: async () => {},
+    chrome: {
+      storage: {
+        local: {
+          get: async () => ({
+            hostedCheckoutPhoneNumber: '8352891599',
+          }),
+        },
+      },
+    },
+    fetch: async (url) => {
+      fetchUrls.push(url);
+      const parsed = new URL(String(url));
+      if (parsed.searchParams.has('after_ms') || parsed.searchParams.has('phone')) {
+        return {
+          ok: false,
+          text: async () => 'forbidden',
+        };
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          code: 1,
+          data: {
+            code: 'PayPal: 333444 is your security code.',
+            code_time: '2026-05-21 00:44:10',
+          },
+        }),
+      };
+    },
+    getState: async () => ({}),
+  });
+
+  const result = await executor.fetchHostedCheckoutVerificationCodeManually({
+    verificationUrl: 'https://relay.example/api/record?token=test',
+    afterMs: Date.parse('2026-05-21T00:44:00'),
+  });
+
+  assert.equal(result.code, '333444');
+  assert.equal(fetchUrls.length, 2);
+  assert.equal(new URL(fetchUrls[0]).searchParams.has('after_ms'), true);
+  assert.equal(new URL(fetchUrls[1]).searchParams.has('after_ms'), false);
+  assert.equal(new URL(fetchUrls[1]).searchParams.has('phone'), false);
+  assert.ok(new URL(fetchUrls[1]).searchParams.get('t'));
+});
+
+test('hosted checkout verification ignores fallback code older than after_ms', async () => {
+  const executor = api.createPlusCheckoutCreateExecutor({
+    addLog: async () => {},
+    chrome: {
+      storage: {
+        local: {
+          get: async () => ({
+            hostedCheckoutPhoneNumber: '8352891599',
+          }),
+        },
+      },
+    },
+    fetch: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.searchParams.has('after_ms') || parsed.searchParams.has('phone')) {
+        return {
+          ok: false,
+          text: async () => 'forbidden',
+        };
+      }
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          code: 1,
+          data: {
+            code: 'PayPal: 333444 is your security code.',
+            code_time: '2026-05-21 00:43:32',
+          },
+        }),
+      };
+    },
+    getState: async () => ({}),
+  });
+
+  await assert.rejects(
+    () => executor.fetchHostedCheckoutVerificationCodeManually({
+      verificationUrl: 'https://relay.example/api/record?token=test',
+      afterMs: Date.parse('2026-05-21T00:43:53'),
+    }),
+    /暂未返回|有效验证码/
+  );
+});
+
+test('hosted checkout PayPal verification refetches fresh code without resend', async () => {
+  const events = [];
+  let verificationSubmitCount = 0;
+  let resendCount = 0;
+  const executor = api.createPlusCheckoutCreateExecutor({
+    addLog: async (message, level = 'info') => {
+      events.push({ type: 'log', message, level });
+    },
+    chrome: {
+      storage: {
+        local: {
+          get: async () => ({
+            hostedCheckoutVerificationUrl: 'https://relay.example/latest',
+            hostedCheckoutPhoneNumber: '4642610989',
+            hostedCheckoutVerificationPopupDelaySeconds: 6,
+          }),
+        },
+      },
+      tabs: {
+        create: async () => ({ id: 80 }),
+        update: async () => {},
+        get: async () => ({
+          id: 80,
+          url: verificationSubmitCount >= 2
+            ? 'https://chatgpt.com/payments/success'
+            : 'https://www.paypal.com/checkoutnow',
+        }),
+      },
+    },
+    completeNodeFromBackground: async (step, payload) => {
+      events.push({ type: 'complete', step, payload });
+    },
+    enableHostedCheckoutAutomation: true,
+    ensureContentScriptReadyOnTabUntilStopped: async () => {},
+    fetch: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.origin === 'https://relay.example') {
+        events.push({ type: 'verification-fetch', url: String(url) });
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            messages: [
+              { text: 'PayPal code 111111' },
+              { text: 'PayPal code 222222' },
+            ],
+          }),
+          json: async () => ({}),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          address: {
+            Address: '123 Main St',
+            City: 'New York',
+            State_Full: 'New York',
+            Zip_Code: '10001',
+          },
+        }),
+        text: async () => '{}',
+      };
+    },
+    getState: async () => ({}),
+    registerTab: async () => {},
+    sendTabMessageUntilStopped: async (_tabId, _source, message) => {
+      if (message.type === 'CREATE_PLUS_CHECKOUT') {
+        return {
+          checkoutUrl: 'https://chatgpt.com/checkout/openai_ie/cs_live_final',
+          hostedCheckoutUrl: 'https://pay.openai.com/c/pay/hosted_cs_live_final',
+          preferredCheckoutUrl: 'https://pay.openai.com/c/pay/hosted_cs_live_final',
+          country: 'US',
+          currency: 'USD',
+        };
+      }
+      if (message.type === 'RUN_HOSTED_OPENAI_CHECKOUT_STEP') {
+        return {};
+      }
+      if (message.type === 'PAYPAL_HOSTED_GET_STATE') {
+        return {
+          hostedStage: 'verification',
+          verificationInputsVisible: true,
+          verificationErrorVisible: verificationSubmitCount > 0,
+          verificationResendReady: true,
+        };
+      }
+      if (message.type === 'PAYPAL_RUN_HOSTED_CHECKOUT_STEP') {
+        if (message.payload?.resendVerification) {
+          resendCount += 1;
+          events.push({ type: 'resend' });
+        }
+        if (message.payload?.verificationCode) {
+          verificationSubmitCount += 1;
+          events.push({ type: 'submit-code', code: message.payload.verificationCode });
+        }
+        return {};
+      }
+      return {};
+    },
+    setState: async () => {},
+    sleepWithStop: async (ms) => {
+      events.push({ type: 'sleep', ms });
+    },
+    waitForTabCompleteUntilStopped: async () => {},
+    waitForTabUrlMatchUntilStopped: async (_tabId, matcher) => {
+      const payPalTab = { id: 80, url: 'https://www.paypal.com/checkoutnow' };
+      if (matcher(payPalTab.url, payPalTab)) return payPalTab;
+      return payPalTab;
+    },
+  });
+
+  await executor.executePlusCheckoutCreate({
+    plusModeEnabled: true,
+    plusPaymentMethod: 'paypal',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(resendCount, 0);
+  assert.deepStrictEqual(
+    events.filter((event) => event.type === 'submit-code').map((event) => event.code),
+    ['111111', '222222']
+  );
+  assert.ok(events.some((event) => event.type === 'sleep' && event.ms === 6000));
+  assert.equal(events.some((event) => event.type === 'complete' && event.step === 'plus-checkout-create'), true);
+});
+
+test('hosted checkout PayPal verification allows one resend after three rejected codes', async () => {
+  const events = [];
+  let verificationSubmitCount = 0;
+  let resendCount = 0;
+  const codes = ['111111', '222222', '333333', '444444'];
+  const executor = api.createPlusCheckoutCreateExecutor({
+    addLog: async (message, level = 'info') => {
+      events.push({ type: 'log', message, level });
+    },
+    chrome: {
+      storage: {
+        local: {
+          get: async () => ({
+            hostedCheckoutVerificationUrl: 'https://relay.example/latest',
+            hostedCheckoutPhoneNumber: '4642610989',
+            hostedCheckoutVerificationPopupDelaySeconds: 0,
+          }),
+        },
+      },
+      tabs: {
+        create: async () => ({ id: 81 }),
+        update: async () => {},
+        get: async () => ({
+          id: 81,
+          url: verificationSubmitCount >= 4
+            ? 'https://chatgpt.com/payments/success'
+            : 'https://www.paypal.com/checkoutnow',
+        }),
+      },
+    },
+    completeNodeFromBackground: async (step, payload) => {
+      events.push({ type: 'complete', step, payload });
+    },
+    enableHostedCheckoutAutomation: true,
+    ensureContentScriptReadyOnTabUntilStopped: async () => {},
+    fetch: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.origin === 'https://relay.example') {
+        events.push({ type: 'verification-fetch', url: String(url) });
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            messages: codes.map((code) => ({ text: `PayPal code ${code}` })),
+          }),
+          json: async () => ({}),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          address: {
+            Address: '123 Main St',
+            City: 'New York',
+            State_Full: 'New York',
+            Zip_Code: '10001',
+          },
+        }),
+        text: async () => '{}',
+      };
+    },
+    getState: async () => ({}),
+    registerTab: async () => {},
+    sendTabMessageUntilStopped: async (_tabId, _source, message) => {
+      if (message.type === 'CREATE_PLUS_CHECKOUT') {
+        return {
+          checkoutUrl: 'https://chatgpt.com/checkout/openai_ie/cs_live_final',
+          hostedCheckoutUrl: 'https://pay.openai.com/c/pay/hosted_cs_live_final',
+          preferredCheckoutUrl: 'https://pay.openai.com/c/pay/hosted_cs_live_final',
+          country: 'US',
+          currency: 'USD',
+        };
+      }
+      if (message.type === 'RUN_HOSTED_OPENAI_CHECKOUT_STEP') {
+        return {};
+      }
+      if (message.type === 'PAYPAL_HOSTED_GET_STATE') {
+        return {
+          hostedStage: 'verification',
+          verificationInputsVisible: true,
+          verificationErrorVisible: verificationSubmitCount > 0 && verificationSubmitCount < 4,
+          verificationResendReady: true,
+        };
+      }
+      if (message.type === 'PAYPAL_RUN_HOSTED_CHECKOUT_STEP') {
+        if (message.payload?.resendVerification) {
+          resendCount += 1;
+          events.push({ type: 'resend' });
+        }
+        if (message.payload?.verificationCode) {
+          verificationSubmitCount += 1;
+          events.push({ type: 'submit-code', code: message.payload.verificationCode });
+        }
+        return {};
+      }
+      return {};
+    },
+    setState: async () => {},
+    sleepWithStop: async () => {},
+    waitForTabCompleteUntilStopped: async () => {},
+    waitForTabUrlMatchUntilStopped: async (_tabId, matcher) => {
+      const payPalTab = { id: 81, url: 'https://www.paypal.com/checkoutnow' };
+      if (matcher(payPalTab.url, payPalTab)) return payPalTab;
+      return payPalTab;
+    },
+  });
+
+  await executor.executePlusCheckoutCreate({
+    plusModeEnabled: true,
+    plusPaymentMethod: 'paypal',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(resendCount, 1);
+  assert.deepStrictEqual(
+    events.filter((event) => event.type === 'submit-code').map((event) => event.code),
+    ['111111', '222222', '333333', '444444']
+  );
+  assert.equal(events.findIndex((event) => event.type === 'resend') > events.findIndex((event) => event.type === 'submit-code' && event.code === '333333'), true);
+  assert.equal(events.some((event) => event.type === 'complete' && event.step === 'plus-checkout-create'), true);
+});
+
 test('Plus checkout content routes billing operations through the operation delay gate', async () => {
   const { checkoutEvents, send } = createCheckoutContentHarness();
 

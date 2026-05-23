@@ -10002,6 +10002,45 @@ async function ensureManualInteractionAllowed(actionLabel) {
   return state;
 }
 
+async function completeRunningStep5IfAlreadySubmitted(nodeId) {
+  const normalizedNodeId = String(nodeId || '').trim();
+  if (normalizedNodeId !== 'fill-profile') {
+    return null;
+  }
+
+  const signupTabId = await getTabId('signup-page');
+  if (!signupTabId) {
+    throw new Error('节点 fill-profile 正在运行中，且未找到注册页标签，不能跳过。');
+  }
+
+  await addLog('步骤 5：正在确认页面是否已离开资料页，以便手动跳过卡住的完成等待...', 'info', {
+    step: 5,
+    stepKey: 'fill-profile',
+  });
+
+  const completionState = await validateStep5PostCompletion(signupTabId, {
+    profileSubmitted: true,
+    postSubmitChecked: true,
+    manualSkipRequested: true,
+  });
+  const completionOutcome = completionState?.successState || completionState?.state || 'manual_confirmed';
+
+  await completeNodeFromBackground('fill-profile', {
+    profileSubmitted: true,
+    postSubmitChecked: true,
+    manualCompletedWhileRunning: true,
+    outcome: completionOutcome,
+    url: completionState?.url || '',
+  });
+
+  await addLog('步骤 5：页面已确认离开资料页，已手动完成卡住的第5步并继续后续流程。', 'warn', {
+    step: 5,
+    stepKey: 'fill-profile',
+  });
+
+  return { ok: true, nodeId: normalizedNodeId, status: 'completed', manualCompletedWhileRunning: true };
+}
+
 async function skipNode(nodeId) {
   const state = await ensureManualInteractionAllowed('跳过步骤');
   const normalizedNodeId = String(nodeId || '').trim();
@@ -10014,6 +10053,10 @@ async function skipNode(nodeId) {
   const statuses = normalizeStatusMapForNodes(state.nodeStatuses || {}, state);
   const currentStatus = statuses[normalizedNodeId];
   if (currentStatus === 'running') {
+    const runningCompletion = await completeRunningStep5IfAlreadySubmitted(normalizedNodeId);
+    if (runningCompletion) {
+      return runningCompletion;
+    }
     throw new Error(`节点 ${normalizedNodeId} 正在运行中，不能跳过。`);
   }
   if (isStepDoneStatus(currentStatus)) {
@@ -10666,6 +10709,55 @@ async function finalizeDeferredStepExecutionError(step, error) {
   return finalizeDeferredNodeExecutionError(nodeId, error);
 }
 
+async function waitForStep5LoggedInHomeFallback(timeoutMs = 0, cancelRef = null) {
+  const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 150000);
+
+  while (Date.now() < deadline) {
+    if (cancelRef?.cancelled) {
+      throw new Error('步骤 5：后台登录态兜底检测已取消。');
+    }
+
+    const signupTabId = await getTabId('signup-page').catch(() => null);
+    const candidateTabs = [];
+    if (Number.isInteger(signupTabId)) {
+      const signupTab = await chrome.tabs.get(signupTabId).catch(() => null);
+      if (signupTab) {
+        candidateTabs.push(signupTab);
+      }
+    }
+
+    if (chrome?.tabs?.query) {
+      const queriedTabs = await chrome.tabs.query({}).catch(() => []);
+      for (const tab of queriedTabs || []) {
+        if (tab && !candidateTabs.some((candidate) => candidate.id === tab.id)) {
+          candidateTabs.push(tab);
+        }
+      }
+    }
+
+    const loggedInTab = candidateTabs.find((tab) => isLikelyLoggedInChatgptHomeUrl(tab?.url || ''));
+    if (loggedInTab) {
+      const payload = {
+        profileSubmitted: true,
+        postSubmitChecked: true,
+        outcome: 'logged_in_home',
+        url: loggedInTab.url || '',
+        backgroundDetectedLoggedInHome: true,
+      };
+      await completeNodeFromBackground('fill-profile', payload);
+      await addLog('步骤 5：后台检测到 ChatGPT 已登录首页，已自动完成卡住的资料步骤。', 'warn', {
+        step: 5,
+        stepKey: 'fill-profile',
+      });
+      return payload;
+    }
+
+    await sleepWithStop(1000);
+  }
+
+  throw new Error('步骤 5：后台等待 ChatGPT 已登录首页超时。');
+}
+
 async function executeNodeViaCompletionSignal(nodeId, timeoutMs = 0) {
   const normalizedNodeId = String(nodeId || '').trim();
   const executionState = await getState();
@@ -10673,22 +10765,51 @@ async function executeNodeViaCompletionSignal(nodeId, timeoutMs = 0) {
     ? timeoutMs
     : getNodeCompletionSignalTimeoutMs(normalizedNodeId, executionState);
   const completionResultPromise = waitForNodeComplete(normalizedNodeId, resolvedTimeoutMs).then(
-    payload => ({ ok: true, payload }),
-    error => ({ ok: false, error }),
+    payload => ({ type: 'completion', ok: true, payload }),
+    error => ({ type: 'completion', ok: false, error }),
   );
+  const fallbackCancelRef = { cancelled: false };
+  const fallbackResultPromise = normalizedNodeId === 'fill-profile'
+    ? waitForStep5LoggedInHomeFallback(resolvedTimeoutMs, fallbackCancelRef).then(
+        payload => ({ type: 'step5-login-fallback', ok: true, payload }),
+        error => ({ type: 'step5-login-fallback', ok: false, error }),
+      )
+    : null;
 
   let executeError = null;
-  try {
-    await executeNode(normalizedNodeId, { deferRetryableTransportError: true });
-  } catch (err) {
-    executeError = err;
-    if (isStopError(err) || !isRetryableContentScriptTransportError(err)) {
-      notifyNodeError(normalizedNodeId, getErrorMessage(err));
+  const executeResultPromise = (async () => {
+    try {
+      await executeNode(normalizedNodeId, { deferRetryableTransportError: true });
+      return { type: 'execute', ok: true };
+    } catch (err) {
+      executeError = err;
+      if (isStopError(err) || !isRetryableContentScriptTransportError(err)) {
+        notifyNodeError(normalizedNodeId, getErrorMessage(err));
+      }
+      return { type: 'execute', ok: false, error: err };
     }
+  })();
+
+  const waiters = fallbackResultPromise
+    ? [completionResultPromise, executeResultPromise, fallbackResultPromise]
+    : [completionResultPromise, executeResultPromise];
+  const firstResult = await Promise.race(waiters);
+  if ((firstResult.type === 'completion' || firstResult.type === 'step5-login-fallback') && firstResult.ok) {
+    fallbackCancelRef.cancelled = true;
+    return firstResult.payload;
   }
 
-  const completionResult = await completionResultPromise;
+  if (firstResult.type === 'completion' && !firstResult.ok) {
+    throw firstResult.error;
+  }
+
+  const completionResult = firstResult.type === 'completion'
+    ? firstResult
+    : (fallbackResultPromise
+        ? await Promise.race([completionResultPromise, fallbackResultPromise])
+        : await completionResultPromise);
   if (completionResult.ok) {
+    fallbackCancelRef.cancelled = true;
     if (executeError) {
       console.warn(
         LOG_PREFIX,
@@ -10696,6 +10817,14 @@ async function executeNodeViaCompletionSignal(nodeId, timeoutMs = 0) {
       );
     }
     return completionResult.payload;
+  }
+
+  if (completionResult.type === 'step5-login-fallback' && !completionResult.ok) {
+    const lateCompletionResult = await completionResultPromise;
+    if (lateCompletionResult.ok) {
+      return lateCompletionResult.payload;
+    }
+    throw lateCompletionResult.error;
   }
 
   if (executeError && isRetryableContentScriptTransportError(executeError)) {

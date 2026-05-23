@@ -11797,11 +11797,31 @@ function updateButtonStates() {
     const currentIndex = NODE_IDS.indexOf(nodeId);
     const prevNodeId = currentIndex > 0 ? NODE_IDS[currentIndex - 1] : null;
     const prevStatus = prevNodeId === null ? 'completed' : statuses[prevNodeId];
+    const canCompleteRunningStep5 = nodeId === 'fill-profile'
+      && currentStatus === 'running'
+      && !autoLocked
+      && !autoScheduled;
 
-    if (!SKIPPABLE_NODES.has(nodeId) || anyRunning || autoLocked || autoScheduled || currentStatus === 'running' || isDoneStatus(currentStatus)) {
+    if (!SKIPPABLE_NODES.has(nodeId) || isDoneStatus(currentStatus)) {
       btn.style.display = 'none';
       btn.disabled = true;
       btn.title = '当前不可跳过';
+      return;
+    }
+
+    if (canCompleteRunningStep5) {
+      btn.style.display = '';
+      btn.disabled = false;
+      btn.title = '确认第5步已完成并继续';
+      btn.setAttribute('aria-label', '确认第5步已完成并继续');
+      return;
+    }
+
+    if (anyRunning || autoLocked || autoScheduled || currentStatus === 'running') {
+      btn.style.display = 'none';
+      btn.disabled = true;
+      btn.title = '当前不可跳过';
+      btn.setAttribute('aria-label', `跳过节点 ${nodeId || step}`);
       return;
     }
 
@@ -11809,12 +11829,14 @@ function updateButtonStates() {
       btn.style.display = 'none';
       btn.disabled = true;
       btn.title = `请先完成节点 ${prevNodeId}`;
+      btn.setAttribute('aria-label', `跳过节点 ${nodeId || step}`);
       return;
     }
 
     btn.style.display = '';
     btn.disabled = false;
     btn.title = `跳过节点 ${nodeId}`;
+    btn.setAttribute('aria-label', `跳过节点 ${nodeId || step}`);
   });
 
   btnReset.disabled = anyRunning || autoScheduled || isAutoRunPausedPhase() || autoLocked;

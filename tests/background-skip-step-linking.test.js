@@ -64,6 +64,7 @@ function extractFunction(name) {
 function createApi() {
   const bundle = [
     extractFunction('isStepDoneStatus'),
+    extractFunction('completeRunningStep5IfAlreadySubmitted'),
     extractFunction('skipNode'),
   ].join('\n');
 
@@ -164,4 +165,61 @@ test('skipNode from open-chatgpt skips only unfinished linked signup nodes', asy
     )),
     true
   );
+});
+
+test('skipNode completes running fill-profile when the profile page already submitted', async () => {
+  const statuses = Object.fromEntries(OPENAI_NODE_IDS.map((nodeId) => [nodeId, 'completed']));
+  statuses['fill-profile'] = 'running';
+  statuses['wait-registration-success'] = 'pending';
+  statuses['oauth-login'] = 'pending';
+  statuses['fetch-login-code'] = 'pending';
+  statuses['confirm-oauth'] = 'pending';
+  statuses['platform-verify'] = 'pending';
+  const events = {
+    completions: [],
+    logs: [],
+  };
+  const api = createApi();
+
+  globalThis.ensureManualInteractionAllowed = async () => ({
+    nodeStatuses: { ...statuses },
+  });
+  globalThis.getTabId = async (source) => {
+    assert.equal(source, 'signup-page');
+    return 123;
+  };
+  globalThis.validateStep5PostCompletion = async (tabId, payload) => {
+    assert.equal(tabId, 123);
+    assert.equal(payload.manualSkipRequested, true);
+    return { successState: 'logged_in_home', url: 'https://chatgpt.com/' };
+  };
+  globalThis.completeNodeFromBackground = async (nodeId, payload) => {
+    events.completions.push({ nodeId, payload });
+    statuses[nodeId] = 'completed';
+  };
+  globalThis.addLog = async (message, level, options = {}) => {
+    events.logs.push({ message, level, options });
+  };
+
+  const result = await api.skipNode('fill-profile');
+
+  assert.deepStrictEqual(result, {
+    ok: true,
+    nodeId: 'fill-profile',
+    status: 'completed',
+    manualCompletedWhileRunning: true,
+  });
+  assert.deepStrictEqual(events.completions, [
+    {
+      nodeId: 'fill-profile',
+      payload: {
+        profileSubmitted: true,
+        postSubmitChecked: true,
+        manualCompletedWhileRunning: true,
+        outcome: 'logged_in_home',
+        url: 'https://chatgpt.com/',
+      },
+    },
+  ]);
+  assert.equal(events.logs.some(({ message }) => message.includes('第5步')), true);
 });

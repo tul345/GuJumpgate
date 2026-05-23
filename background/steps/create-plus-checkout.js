@@ -21,6 +21,10 @@
   const HOSTED_CHECKOUT_PAYPAL_LOOP_TIMEOUT_MS = 10 * 60 * 1000;
   const HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS = 12;
   const HOSTED_CHECKOUT_VERIFICATION_POLL_INTERVAL_MS = 5000;
+  const HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND = 3;
+  const HOSTED_CHECKOUT_VERIFICATION_REFETCH_BEFORE_RESEND = 3;
+  const HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS = 1;
+  const HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS = 8000;
   const HOSTED_CHECKOUT_PAYPAL_DEFAULT_PHONE = '1234567890';
   const HOSTED_CHECKOUT_SUCCESS_URL_PATTERN = /^https:\/\/(?:chatgpt\.com|www\.chatgpt\.com|chat\.openai\.com)\/(?:backend-api\/)?payments\/success(?:[/?#]|$)/i;
 
@@ -108,6 +112,7 @@
         stored = await chrome.storage.local.get([
           'hostedCheckoutVerificationUrl',
           'hostedCheckoutPhoneNumber',
+          'hostedCheckoutVerificationPopupDelaySeconds',
         ]).catch(() => ({}));
       }
       const verificationUrl = String(
@@ -122,9 +127,15 @@
         || HOSTED_CHECKOUT_PAYPAL_DEFAULT_PHONE
         || ''
       ).trim();
+      const popupDelaySeconds = Math.min(60, Math.max(0, Math.floor(Number(
+        stored?.hostedCheckoutVerificationPopupDelaySeconds
+        ?? state?.hostedCheckoutVerificationPopupDelaySeconds
+        ?? 4
+      ) || 4)));
       return {
         verificationUrl,
         phone,
+        popupDelaySeconds,
       };
     }
 
@@ -322,46 +333,154 @@
       };
     }
 
-    function extractHostedCheckoutVerificationCode(payload = {}) {
-      const candidates = [
+    function normalizeHostedCheckoutExcludedCodes(values = []) {
+      const rawValues = Array.isArray(values) ? values : [values];
+      return new Set(rawValues
+        .map((value) => String(value || '').replace(/\D+/g, '').slice(0, 6))
+        .filter((value) => /^\d{6}$/.test(value)));
+    }
+
+    function extractHostedCheckoutVerificationCode(payload = {}, options = {}) {
+      const excludedCodes = normalizeHostedCheckoutExcludedCodes(options.excludedCodes || options.excludeCodes || []);
+      const queue = [
         payload?.data,
         payload?.code,
         payload?.text,
         payload?.message,
+        payload?.otp,
+        payload?.verification_code,
+        payload?.verificationCode,
         payload,
       ];
-      for (const candidate of candidates) {
+      const visited = new Set();
+
+      while (queue.length) {
+        const candidate = queue.shift();
+        if (candidate == null) {
+          continue;
+        }
+        if (typeof candidate === 'object') {
+          if (visited.has(candidate)) {
+            continue;
+          }
+          visited.add(candidate);
+          if (Array.isArray(candidate)) {
+            queue.push(...candidate);
+            continue;
+          }
+          queue.push(
+            candidate.data,
+            candidate.code,
+            candidate.text,
+            candidate.message,
+            candidate.otp,
+            candidate.sms_code,
+            candidate.smsCode,
+            candidate.verification_code,
+            candidate.verificationCode,
+            candidate.latest,
+            candidate.latest_code,
+            candidate.latestCode,
+            candidate.items,
+            candidate.messages,
+            candidate.results,
+          );
+          continue;
+        }
+
         const text = String(candidate || '').trim();
         if (!text) {
           continue;
         }
-        const match = text.match(/\d{6}/);
-        if (match) {
-          return match[0];
+        const matches = text.match(/\d{6}/g) || [];
+        for (const match of matches) {
+          if (!excludedCodes.has(match)) {
+            return match;
+          }
         }
         const digits = text.replace(/\D+/g, '').slice(0, 6);
-        if (digits.length === 6) {
+        if (digits.length === 6 && !excludedCodes.has(digits)) {
           return digits;
         }
       }
       return '';
     }
 
-    async function fetchHostedCheckoutVerificationCode() {
-      const runtimeConfig = await getHostedCheckoutRuntimeConfig();
-      const verificationUrl = runtimeConfig.verificationUrl;
-      await addLog(`步骤 6：当前 hosted checkout 验证码接口配置为 ${verificationUrl || '(空)'}。`, 'info');
-      const fetcher = typeof fetchImpl === 'function'
-        ? fetchImpl
-        : (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
-      if (typeof fetcher !== 'function') {
-        throw new Error('当前运行环境不支持 fetch，无法获取 hosted checkout 验证码。');
+    function parseHostedCheckoutCodeTimeMs(value = '') {
+      const text = String(value || '').trim();
+      if (!text) {
+        return 0;
       }
-      if (!verificationUrl) {
-        throw new Error('当前未配置 hosted checkout 验证码接口地址。');
+      const normalized = text.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})$/, '$1T$2');
+      const ms = Date.parse(normalized);
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function getHostedCheckoutPayloadCodeTimeMs(payload = {}) {
+      const queue = [payload?.data, payload];
+      const visited = new Set();
+
+      while (queue.length) {
+        const candidate = queue.shift();
+        if (!candidate || typeof candidate !== 'object') {
+          continue;
+        }
+        if (visited.has(candidate)) {
+          continue;
+        }
+        visited.add(candidate);
+
+        const codeTimeMs = parseHostedCheckoutCodeTimeMs(
+          candidate.code_time
+          || candidate.codeTime
+          || candidate.received_at
+          || candidate.receivedAt
+          || candidate.created_at
+          || candidate.createdAt
+          || candidate.time
+          || candidate.timestamp
+        );
+        if (codeTimeMs > 0) {
+          return codeTimeMs;
+        }
+
+        if (Array.isArray(candidate)) {
+          queue.push(...candidate);
+        } else {
+          queue.push(candidate.data, candidate.items, candidate.messages, candidate.results, candidate.latest);
+        }
       }
-      const separator = verificationUrl.includes('?') ? '&' : '?';
-      const response = await fetcher(`${verificationUrl}${separator}t=${Date.now()}`, {
+
+      return 0;
+    }
+
+    function buildHostedCheckoutVerificationUrl(rawUrl, runtimeConfig = {}, options = {}) {
+      const parsed = new URL(rawUrl);
+      const excludedCodes = [...normalizeHostedCheckoutExcludedCodes(options.excludedCodes || options.excludeCodes || [])];
+      const phone = String(options.phone || runtimeConfig.phone || '').trim();
+      const afterMs = Math.max(0, Math.floor(Number(options.afterMs || options.after_ms) || 0));
+
+      parsed.searchParams.set('t', String(Date.now()));
+      if (phone) {
+        parsed.searchParams.set('phone', phone);
+      }
+      if (afterMs > 0) {
+        parsed.searchParams.set('after_ms', String(afterMs));
+      }
+      if (excludedCodes.length) {
+        parsed.searchParams.set('exclude_codes', excludedCodes.join(','));
+      }
+      return parsed.toString();
+    }
+
+    function buildHostedCheckoutVerificationSimpleUrl(rawUrl) {
+      const parsed = new URL(rawUrl);
+      parsed.searchParams.set('t', String(Date.now()));
+      return parsed.toString();
+    }
+
+    async function requestHostedCheckoutVerificationPayload(fetcher, requestUrl) {
+      const response = await fetcher(requestUrl, {
         method: 'GET',
         headers: {
           Accept: 'application/json,text/plain,*/*',
@@ -374,9 +493,52 @@
       } catch {
         payload = text;
       }
-      const code = extractHostedCheckoutVerificationCode(payload);
+      return { response, payload };
+    }
+
+    function extractFreshHostedCheckoutVerificationCode(payload, options = {}) {
+      const code = extractHostedCheckoutVerificationCode(payload, options);
       if (!code) {
-        throw new Error('hosted checkout 验证码接口暂未返回有效验证码。');
+        return '';
+      }
+
+      const afterMs = Math.max(0, Math.floor(Number(options.afterMs || options.after_ms) || 0));
+      const codeTimeMs = getHostedCheckoutPayloadCodeTimeMs(payload);
+      if (afterMs > 0 && codeTimeMs > 0 && codeTimeMs < afterMs) {
+        return '';
+      }
+
+      return code;
+    }
+
+    async function fetchHostedCheckoutVerificationCode(options = {}) {
+      const runtimeConfig = await getHostedCheckoutRuntimeConfig();
+      const verificationUrl = runtimeConfig.verificationUrl;
+      await addLog(`步骤 6：当前 hosted checkout 验证码接口配置为 ${verificationUrl || '(空)'}。`, 'info');
+      const fetcher = typeof fetchImpl === 'function'
+        ? fetchImpl
+        : (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
+      if (typeof fetcher !== 'function') {
+        throw new Error('当前运行环境不支持 fetch，无法获取 hosted checkout 验证码。');
+      }
+      if (!verificationUrl) {
+        throw new Error('当前未配置 hosted checkout 验证码接口地址。');
+      }
+      const requestUrl = buildHostedCheckoutVerificationUrl(verificationUrl, runtimeConfig, options);
+      let { response, payload } = await requestHostedCheckoutVerificationPayload(fetcher, requestUrl);
+      let responseOk = response?.ok !== false;
+      let code = responseOk ? extractFreshHostedCheckoutVerificationCode(payload, options) : '';
+      if (!code && !responseOk) {
+        const simpleUrl = buildHostedCheckoutVerificationSimpleUrl(verificationUrl);
+        ({ response, payload } = await requestHostedCheckoutVerificationPayload(fetcher, simpleUrl));
+        responseOk = response?.ok !== false;
+        code = responseOk ? extractFreshHostedCheckoutVerificationCode(payload, options) : '';
+      }
+      if (!code) {
+        const excludedCount = normalizeHostedCheckoutExcludedCodes(options.excludedCodes || options.excludeCodes || []).size;
+        throw new Error(excludedCount
+          ? 'hosted checkout 验证码接口暂未返回新的有效验证码。'
+          : 'hosted checkout 验证码接口暂未返回有效验证码。');
       }
       return code;
     }
@@ -384,27 +546,23 @@
     async function fetchHostedCheckoutVerificationCodeManually(options = {}) {
       const manualVerificationUrl = String(options?.verificationUrl || '').trim();
       if (manualVerificationUrl) {
+        const runtimeConfig = await getHostedCheckoutRuntimeConfig();
         const fetcher = typeof fetchImpl === 'function'
           ? fetchImpl
           : (typeof fetch === 'function' ? fetch.bind(globalThis) : null);
         if (typeof fetcher !== 'function') {
           throw new Error('当前运行环境不支持 fetch，无法获取 hosted checkout 验证码。');
         }
-        const separator = manualVerificationUrl.includes('?') ? '&' : '?';
-        const response = await fetcher(`${manualVerificationUrl}${separator}t=${Date.now()}`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json,text/plain,*/*',
-          },
-        });
-        const text = await response.text().catch(() => '');
-        let payload = text;
-        try {
-          payload = text ? JSON.parse(text) : {};
-        } catch {
-          payload = text;
+        const requestUrl = buildHostedCheckoutVerificationUrl(manualVerificationUrl, runtimeConfig, options);
+        let { response, payload } = await requestHostedCheckoutVerificationPayload(fetcher, requestUrl);
+        let responseOk = response?.ok !== false;
+        let code = responseOk ? extractFreshHostedCheckoutVerificationCode(payload, options) : '';
+        if (!code && !responseOk) {
+          const simpleUrl = buildHostedCheckoutVerificationSimpleUrl(manualVerificationUrl);
+          ({ response, payload } = await requestHostedCheckoutVerificationPayload(fetcher, simpleUrl));
+          responseOk = response?.ok !== false;
+          code = responseOk ? extractFreshHostedCheckoutVerificationCode(payload, options) : '';
         }
-        const code = extractHostedCheckoutVerificationCode(payload);
         if (!code) {
           throw new Error('hosted checkout 验证码接口暂未返回有效验证码。');
         }
@@ -414,7 +572,7 @@
         };
       }
 
-      const code = await fetchHostedCheckoutVerificationCode();
+      const code = await fetchHostedCheckoutVerificationCode(options);
       const runtimeConfig = await getHostedCheckoutRuntimeConfig();
       return {
         code,
@@ -422,26 +580,27 @@
       };
     }
 
-    async function pollHostedCheckoutVerificationCode() {
+    async function pollHostedCheckoutVerificationCode(options = {}) {
       let lastError = null;
-      for (let attempt = 1; attempt <= HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS; attempt += 1) {
+      const maxAttempts = Math.max(1, Math.floor(Number(options.maxAttempts) || HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS));
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         throwIfStopped();
         try {
-          const code = await fetchHostedCheckoutVerificationCode();
-          await addLog(`步骤 6：已获取 hosted checkout 验证码（${attempt}/${HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS}）。`, 'info');
+          const code = await fetchHostedCheckoutVerificationCode(options);
+          await addLog(`?? 6???? hosted checkout ????${attempt}/${maxAttempts}??`, 'info');
           return code;
         } catch (error) {
           lastError = error;
           await addLog(
-            `步骤 6：hosted checkout 验证码暂不可用（${attempt}/${HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS}）：${error?.message || error}`,
+            `?? 6?hosted checkout ????????${attempt}/${maxAttempts}??${error?.message || error}`,
             'warn'
           );
-          if (attempt < HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS) {
+          if (attempt < maxAttempts) {
             await sleepWithStop(HOSTED_CHECKOUT_VERIFICATION_POLL_INTERVAL_MS);
           }
         }
       }
-      throw lastError || new Error('hosted checkout 验证码轮询失败。');
+      throw lastError || new Error('hosted checkout ????????');
     }
 
     async function runHostedCheckoutOpenAiFlow(tabId, guestProfile) {
@@ -559,6 +718,9 @@
 
     async function runHostedCheckoutPayPalFlow(tabId, guestProfile) {
       const startedAt = Date.now();
+      let hostedVerificationAfterMs = startedAt;
+      const submittedHostedVerificationCodes = new Set();
+      let hostedVerificationResendCount = 0;
       while (Date.now() - startedAt < HOSTED_CHECKOUT_PAYPAL_LOOP_TIMEOUT_MS) {
         throwIfStopped();
         const tab = await chrome?.tabs?.get?.(tabId).catch(() => null);
@@ -589,8 +751,54 @@
 
         const pageState = await getHostedCheckoutPayPalState(tabId);
         if (pageState.hostedStage === 'verification' && pageState.verificationInputsVisible) {
-          await addLog('步骤 6：检测到 PayPal hosted checkout 验证码弹窗，正在获取并填写验证码...', 'info');
-          const verificationCode = await pollHostedCheckoutVerificationCode();
+          if (pageState.verificationErrorVisible && submittedHostedVerificationCodes.size > 0) {
+            if (
+              submittedHostedVerificationCodes.size >= HOSTED_CHECKOUT_VERIFICATION_REFETCH_BEFORE_RESEND
+              && hostedVerificationResendCount < HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS
+            ) {
+              await addLog(`Step 6: PayPal rejected ${submittedHostedVerificationCodes.size} fetched codes; clicking Resend once and then fetching the next latest code.`, 'warn');
+              await runHostedCheckoutPayPalStep(tabId, {
+                resendVerification: true,
+              });
+              hostedVerificationResendCount += 1;
+              hostedVerificationAfterMs = Date.now();
+              await sleepWithStop(HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS);
+              continue;
+            }
+            await addLog('Step 6: PayPal says the submitted code is invalid/expired; fetching the latest code again and excluding submitted codes.', 'warn');
+          }
+
+          const runtimeConfig = await getHostedCheckoutRuntimeConfig();
+          const popupDelayMs = Math.max(0, Number(runtimeConfig?.popupDelaySeconds || 0) * 1000);
+          if (popupDelayMs > 0) {
+            await addLog(`Step 6: waiting ${Math.round(popupDelayMs / 1000)}s after verification popup before fetching latest code.`, 'info');
+            await sleepWithStop(popupDelayMs);
+          }
+
+          await addLog('Step 6: PayPal hosted checkout verification popup detected; fetching and filling latest code.', 'info');
+          let verificationCode = '';
+          try {
+            verificationCode = await pollHostedCheckoutVerificationCode({
+              afterMs: hostedVerificationAfterMs,
+              excludedCodes: [...submittedHostedVerificationCodes],
+              maxAttempts: hostedVerificationResendCount < HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS
+                ? HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND
+                : HOSTED_CHECKOUT_VERIFICATION_POLL_ATTEMPTS,
+            });
+          } catch (pollError) {
+            if (hostedVerificationResendCount >= HOSTED_CHECKOUT_VERIFICATION_RESEND_MAX_ATTEMPTS) {
+              throw pollError;
+            }
+            await addLog(`Step 6: no fresh PayPal verification code after ${HOSTED_CHECKOUT_VERIFICATION_POLL_BEFORE_RESEND} polls; clicking Resend once and retrying.`, 'warn');
+            await runHostedCheckoutPayPalStep(tabId, {
+              resendVerification: true,
+            });
+            hostedVerificationResendCount += 1;
+            hostedVerificationAfterMs = Date.now();
+            await sleepWithStop(HOSTED_CHECKOUT_VERIFICATION_AFTER_RESEND_WAIT_MS);
+            continue;
+          }
+          submittedHostedVerificationCodes.add(verificationCode);
           await runHostedCheckoutPayPalStep(tabId, {
             verificationCode,
           });

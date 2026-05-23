@@ -288,6 +288,83 @@ return { fillHostedVerificationCode };
   );
 }
 
+function createHostedVerificationResendApi(overrides = {}) {
+  const clicked = [];
+  const resendButton = createElement({ tag: 'button', text: 'Resend' });
+  const verificationInputs = Array.from({ length: 6 }, (_, index) => createElement({ tag: 'input', id: `ci-ciBasic-${index}` }));
+  const bindings = {
+    PAYPAL_HOSTED_STAGE_VERIFICATION: 'verification',
+    PAYPAL_HOSTED_VERIFICATION_ERROR_PATTERN: /sorry,\s*something\s+went\s+wrong|get\s+a\s+new\s+code|new\s+code/i,
+    document: {
+      body: {
+        innerText: 'Sorry, something went wrong. Get a new code. Enter your code Resend',
+        textContent: 'Sorry, something went wrong. Get a new code. Enter your code Resend',
+      },
+      getElementById(id) {
+        return verificationInputs.find((input) => input.id === id) || null;
+      },
+      querySelectorAll(selector) {
+        if (selector.includes('button') || selector.includes('[role="button"]')) {
+          return [resendButton];
+        }
+        if (selector.includes('input')) {
+          return verificationInputs;
+        }
+        return [];
+      },
+    },
+    window: {
+      getComputedStyle(el) {
+        return el?.style || { display: 'block', visibility: 'visible', opacity: '1' };
+      },
+    },
+    waitForDocumentComplete: async () => {},
+    performPayPalOperationWithDelay: async (_metadata, operation) => operation(),
+    simulateClick: (el) => clicked.push(el.textContent),
+    sleep: async () => {},
+    ...overrides,
+  };
+
+  const api = new Function(
+    'PAYPAL_HOSTED_STAGE_VERIFICATION',
+    'PAYPAL_HOSTED_VERIFICATION_ERROR_PATTERN',
+    'document',
+    'window',
+    'waitForDocumentComplete',
+    'performPayPalOperationWithDelay',
+    'simulateClick',
+    'sleep',
+    `
+${extractFunction('isVisibleElement')}
+${extractFunction('normalizeText')}
+${extractFunction('getActionText')}
+${extractFunction('getVisibleControls')}
+${extractFunction('isEnabledControl')}
+${extractFunction('findClickableByText')}
+${extractFunction('findHostedVerificationInputs')}
+${extractFunction('hasHostedVerificationInputs')}
+${extractFunction('getHostedVerificationErrorText')}
+${extractFunction('findHostedVerificationResendButton')}
+${extractFunction('requestHostedVerificationResend')}
+return {
+  getHostedVerificationErrorText,
+  requestHostedVerificationResend,
+};
+`
+  )(
+    bindings.PAYPAL_HOSTED_STAGE_VERIFICATION,
+    bindings.PAYPAL_HOSTED_VERIFICATION_ERROR_PATTERN,
+    bindings.document,
+    bindings.window,
+    bindings.waitForDocumentComplete,
+    bindings.performPayPalOperationWithDelay,
+    bindings.simulateClick,
+    bindings.sleep
+  );
+
+  return { api, clicked };
+}
+
 function createHostedReviewApi(overrides = {}) {
   const bindings = {
     PAYPAL_HOSTED_STAGE_REVIEW: 'review_consent',
@@ -500,6 +577,20 @@ test('PayPal hosted checkout verification filler writes six digits into split in
   assert.deepEqual(result, {
     stage: 'verification',
     codeSubmitted: true,
+  });
+});
+
+test('PayPal hosted checkout verification error clicks Resend before fetching a new code', async () => {
+  const { api, clicked } = createHostedVerificationResendApi();
+
+  assert.match(api.getHostedVerificationErrorText(), /Get a new code/);
+
+  const result = await api.requestHostedVerificationResend();
+
+  assert.deepEqual(clicked, ['Resend']);
+  assert.deepEqual(result, {
+    stage: 'verification',
+    resendRequested: true,
   });
 });
 
